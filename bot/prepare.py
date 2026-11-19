@@ -72,12 +72,17 @@ def download(cfg, data_dir: Path, years: float, say=print, dukascopy_back: bool 
         raise RuntimeError(f"Only {len(gold_df):,} gold M1 bars. Check your internet connection (history download) "
                            f"or in MT5 open View → Symbols → {gold} → Bars and request more history.")
     corr = {k: v["close"] for k, v in out.items() if len(v)}
-    for key, spec in vars(cfg.context).items():
-        if not syms.get(key):
-            corr.pop(key, None)  # not tradable live on this server → never train on it
-            continue
-        if getattr(spec, "hf", ""):
-            s = _older_context(spec.hf, data_dir, corr.get(key), start, say)
+    jobs = {}
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(4) as ex:  # all markets download in parallel
+        for key, spec in vars(cfg.context).items():
+            if not syms.get(key):
+                corr.pop(key, None)  # not tradable live on this server → never train on it
+                continue
+            if getattr(spec, "hf", ""):
+                jobs[key] = ex.submit(_older_context, spec.hf, data_dir, corr.get(key), start, say)
+        for key, fut in jobs.items():
+            s = fut.result()
             if s is not None:
                 corr[key] = s
     corr["_equity"] = equity

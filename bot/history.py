@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+from concurrent.futures import ThreadPoolExecutor
 import re
 import time
 import urllib.request
@@ -47,22 +49,31 @@ def list_months(repo: str) -> list[tuple[int, int, str]]:
     return sorted(out)
 
 
-def download(repo: str, cache_dir: Path, start: date, say=print) -> pd.DataFrame:
+def cache_root(fallback: Path) -> Path:
+    """Shared cache that survives re-extracting / updating the app (Windows: %LOCALAPPDATA%\\TradV2\\hf_cache)."""
+    base = os.environ.get("LOCALAPPDATA")
+    return Path(base) / "TradV2" / "hf_cache" if base else Path(fallback)
+
+
+def download(repo: str, cache_dir: Path, start: date, say=print, workers: int = 8) -> pd.DataFrame:
     """All 1-minute bars from `start` → latest. Returns UTC-indexed OHLC + volume (mid prices)."""
-    cache = Path(cache_dir) / repo.replace("/", "__")
+    cache = cache_root(cache_dir) / repo.replace("/", "__")
     cache.mkdir(parents=True, exist_ok=True)
     months = [m for m in list_months(repo) if (m[0], m[1]) >= (start.year, start.month)]
     now = datetime.now(timezone.utc)
     recent = {(now.year, now.month), ((now.year if now.month > 1 else now.year - 1), (now.month - 1) or 12)}
-    frames, fetched = [], 0
-    for y, mth, path in months:
-        local = cache / Path(path).name
-        if not local.exists() or (y, mth) in recent:
-            local.write_bytes(_get(FILE.format(repo=repo, path=path)))
-            fetched += 1
-            if fetched % 12 == 0:
-                say(f"  {repo}: {fetched} monthly files downloaded …")
-        frames.append(pd.read_parquet(local))
+    todo = [(y, m, p) for y, m, p in months if not (cache / Path(p).name).exists() or (y, m) in recent]
+
+    def fetch(item):
+        local = cache / Path(item[2]).name
+        tmp = local.with_suffix(".part")
+        tmp.write_bytes(_get(FILE.format(repo=repo, path=item[2])))
+        tmp.replace(local)  # atomic: an interrupted download never leaves a broken cache file
+
+    with ThreadPoolExecutor(workers) as ex:  # 8 files at a time
+        list(ex.map(fetch, todo))
+    fetched = len(todo)
+    frames = [pd.read_parquet(cache / Path(p).name) for _, _, p in months]
     if not frames:
         return pd.DataFrame()
     df = pd.concat(frames, ignore_index=True)

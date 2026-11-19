@@ -101,7 +101,7 @@ def doctor(cfg):
     return 0
 
 
-def prepare(cfg, years: float, dukascopy: bool = True, trials: int = 120, quiet: bool = False):
+def prepare(cfg, years: float, dukascopy: bool = True, trials: int = 60, quiet: bool = False):
     from prepare import download, research
     say = logging.getLogger("prepare").info if quiet else print
     say(f"Downloading {years:g} years of gold history (your PU Prime bars + public OANDA history for older years) …")
@@ -160,7 +160,7 @@ def worker():
             if why == "retrain":  # weekend: learn from everything collected this week, then carry on
                 status.update(state="retrain", detail="weekly retrain on all saved data")
                 log.info("weekly retrain starting")
-                prepare(cfg, cfg.history.years, quiet=True)
+                prepare(cfg, cfg.history.years, quiet=True, trials=120)
                 delay = 5
                 cfg = load_config(APP / "config.yaml")
                 continue
@@ -382,7 +382,7 @@ def cli():
     sub.add_parser("worker"); sub.add_parser("kill"); sub.add_parser("reset"); sub.add_parser("smoke")
     sub.add_parser("status"); sub.add_parser("test-trade")
     p = sub.add_parser("prepare"); p.add_argument("--years", type=float, default=7)
-    p.add_argument("--no-dukascopy", action="store_true"); p.add_argument("--trials", type=int, default=120)
+    p.add_argument("--no-dukascopy", action="store_true"); p.add_argument("--trials", type=int, default=60)
     sub.add_parser("ui")
     p = sub.add_parser("import-csv"); p.add_argument("path"); p.add_argument("--utc-offset", type=float, default=0)
     p = sub.add_parser("import-codex"); p.add_argument("paths", nargs="+")

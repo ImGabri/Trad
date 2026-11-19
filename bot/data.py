@@ -101,7 +101,10 @@ class MT5Connection:
                 self.server_offset = timedelta(hours=2)
             return
         
-        sym = self.cfg.symbols.primary
+        try:  # the account's real gold symbol (e.g. XAUUSD.s) — plain "XAUUSD" may not quote on this account
+            sym = self.resolve_gold(self.cfg.symbols.primary)
+        except RuntimeError:
+            sym = self.cfg.symbols.primary
         mt5.symbol_select(sym, True)
         tick = mt5.symbol_info_tick(sym)
         if tick is None or _market_closed_now():
