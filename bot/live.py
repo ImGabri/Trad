@@ -21,6 +21,7 @@ from config import commission_per_side
 from data import MT5Connection, Store, acct_per_usd, mt5, remember_terminal, tick_microstructure
 from features import build_features
 from learning import OutcomeModel, entry_features
+from analyst import M15Analyst, NewsAgent, chart_snapshot, m15_frame
 from monitor import Status, Telegram, fmt_entry, fmt_exit
 from news import load_events, refresh_calendar
 from risk import RiskState, min_required_equity, position_size, survival_breached
@@ -43,6 +44,14 @@ class Runner:
         self.model = DirectionModel.load(self.data_dir / "model")
         self.learn_dir = self.data_dir / "learning"
         self.outcome = OutcomeModel.load(self.learn_dir)  # learns from the bot's own trades
+        self.analyst = M15Analyst.load(self.data_dir / "model")  # 15-minute chart outlook
+        an = getattr(cfg, "analyst", None)
+        want_news = an is not None and str(getattr(an, "news_agent", "auto")).lower() not in ("off", "false", "0")
+        self.news = (NewsAgent(self.data_dir, getattr(an, "news_model", "claude-opus-5-5"),
+                               int(getattr(an, "news_interval_min", 15)), getattr(an, "news_effort", "medium"))
+                     if want_news and NewsAgent.available() else None)
+        self.outlook: dict = {}
+        self.news_track: dict = {}
         bt_wr = float(self.model.meta.get("backtest_win_rate", 50.0))
         self.drift = DriftMonitor(bt_wr, cfg.model.drift_window_trades, cfg.model.drift_tolerance_pct)
         self.tg = Telegram(cfg.secrets.telegram_token, cfg.secrets.telegram_chat_id)
@@ -163,7 +172,8 @@ class Runner:
             equity=acc.equity, price=tick.bid if tick else None, spread=(tick.ask - tick.bid) if tick else None,
             positions=[dict(ticket=p.ticket, side="BUY" if p.type == 0 else "SELL", lots=p.volume,
                             open=p.price_open, sl=p.sl, tp=p.tp, profit=round(p.profit + p.swap, 2)) for p in pos],
-            today=self._today_stats(), last=self.last_decision, model=self.model.meta.get("trained_at", ""),
+            today=self._today_stats(), last=self.last_decision, outlook=self.outlook,
+            news=dict(self.news.latest or {}, enabled=True, track=self.news_track) if self.news else {"enabled": False}, model=self.model.meta.get("trained_at", ""),
             hard_stop=self.risk.hard_stop, daily_halt=self.risk.daily_halt, drift_pause=self.risk.drift_pause)
 
     def _today_stats(self) -> dict:
@@ -182,7 +192,8 @@ class Runner:
         trained = pd.Timestamp(self.model.meta.get("trained_at", "2000-01-01"))
         age_days = (pd.Timestamp.now(tz="UTC") - trained.tz_convert("UTC") if trained.tzinfo else
                     pd.Timestamp.now() - trained).days
-        return closed and age_days >= self.cfg.model.retrain_every_days and not ex.bot_positions(self.gold)
+        due = age_days >= self.cfg.model.retrain_every_days or bool(self.model.meta.get("pretrained"))
+        return closed and due and not ex.bot_positions(self.gold)
 
     def _ai_favours(self, side: int) -> bool:
         a = self.last_ai
@@ -342,7 +353,9 @@ class Runner:
         m1 = self.conn.rates_latest(self.gold, "M1", M1_HISTORY + 1)
         corr = {}
         for k, sym in self.corr.items():
-            if sym and any(c.startswith(k + "_chg") for c in self.model.features):
+            used = any(c.startswith(k + "_chg") for c in self.model.features) or \
+                (self.analyst is not None and any(c.startswith(k + "_r") for c in self.analyst.features))
+            if sym and used:
                 bars = self.conn.rates_latest(sym, "M1", 1600)  # ≥ 1 day: rolling silver beta needs it
                 corr[k] = bars["close"] if not bars.empty else None
         now = pd.Timestamp.now(tz="UTC")
@@ -360,6 +373,7 @@ class Runner:
         ai_dir, conf = signal_from_proba(pd.Series([p_up]))
         ai_dir, conf = int(ai_dir.iloc[0]), float(conf.iloc[0])
         bar_time = f.index[-1]
+        self._update_outlook(m1, corr, float(row["close"]))
         self.last_ai = dict(dir=ai_dir, conf=conf, ts=time.time())
         self.acct_usd = acct_per_usd(self.gold)
 
@@ -394,7 +408,9 @@ class Runner:
             cfg, rule=int(s["rule_signal"]), ai_dir=ai_dir, conf=conf, has_ai=True, session=s["session"],
             blocked=bool(s["entry_blocked"]), phase=s["news_phase"], event_id=int(self._event_key(s)),
             news_used=news_used, spread_ratio=float(row["spread_ratio"]), atr_m5=float(row["m5_atr"]),
-            slippage_usd=self._expected_slippage(), bias=int(s["bias"]))
+            slippage_usd=self._expected_slippage(), bias=int(s["bias"]),
+            outlook_dir=int(self.outlook.get("dir", 0)), outlook_conf=float(self.outlook.get("conf", 0.0)),
+            news=self._fresh_news())
         ok, why2 = (False, "paused") if self.paused else self.risk.can_open(
             len(positions), side, [(1 if p.type == 0 else -1, p.profit) for p in positions])
         x = entry_features(row, side, p_up, kind) if side != 0 else None
@@ -462,6 +478,34 @@ class Runner:
         self.tg.send(fmt_entry(dict(info, price=fill.price, sl=sl, tp=tp)))
         if slip > self.cfg.risk.max_slippage_pips * self.cfg.instrument.pip_size:
             self.tg.send(f"⚠️ Slippage {slip:.2f} exceeded cap on #{fill.ticket}")
+
+    def _update_outlook(self, m1: pd.DataFrame, corr: dict, price: float):
+        """On every closed 15-minute bar: model outlook for the next hour; kick off the news agent if due."""
+        if self.analyst is None or m1.empty:
+            return
+        last_closed = m1.index[-1] + pd.Timedelta(minutes=1)          # end of the newest closed M1 bar
+        m15_open = (last_closed - pd.Timedelta(minutes=15)).floor("15min")  # newest COMPLETE M15 bar
+        if self.outlook.get("bar") == str(m15_open):
+            return
+        x15 = m15_frame(m1[m1.index < m15_open + pd.Timedelta(minutes=15)], corr, self.events)
+        x15 = x15[x15.index <= m15_open]
+        if x15.empty:
+            return
+        p = float(self.analyst.predict(x15.iloc[[-1]]).iloc[0])
+        self.outlook = dict(bar=str(m15_open), p_up=round(p, 3), dir=1 if p >= 0.5 else -1, conf=round(max(p, 1 - p), 3),
+                            valid_auc=self.analyst.meta.get("valid_auc"))
+        if self.news is not None and self.news.due():
+            now = pd.Timestamp.now(tz="UTC")
+            upcoming = [str(t)[:16] for t in self.events[(self.events >= now) & (self.events <= now + pd.Timedelta(hours=6))]]
+            self.news.run_async(chart_snapshot(x15, p, upcoming, price))
+            self.news_track = self.news.track_record(price)
+
+    def _fresh_news(self) -> dict | None:
+        n = self.news.latest if self.news is not None else None
+        if not n:
+            return None
+        age = (pd.Timestamp.now(tz="UTC") - pd.Timestamp(n["time"])).total_seconds() / 60
+        return n if age <= 2 * self.news.interval else None
 
     def _event_key(self, s) -> int:
         """Stable id for the current event (epoch minutes) so 'one news scalp per event' survives restarts."""

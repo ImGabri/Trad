@@ -36,3 +36,18 @@ class DemoExecutionTest(unittest.TestCase):
                     self.assertGreater(side * (fill.price - position.sl), 0)
                     self.assertGreater(side * (position.tp - fill.price), 0)
                     self.assertTrue(execution.close_position(position, 10).ok)
+
+
+class FillingFallbackTest(unittest.TestCase):
+    def test_unsupported_filling_mode_falls_back(self):
+        from fake_mt5 import install
+        from synthetic import synthetic_m1
+
+        with patch.dict(sys.modules):
+            api = install(synthetic_m1(days=2), start_bar=100)
+            api._fake.reject_fillings = {api.ORDER_FILLING_FOK}
+            with patch.object(execution, "mt5", api):
+                fill = execution.open_market("XAUUSD", 1, 0.01, 1.0, 1.5, 10)
+                self.assertTrue(fill.ok)
+                modes = [o["type_filling"] for o in api._fake.orders]
+                self.assertEqual(modes[:2], [api.ORDER_FILLING_FOK, api.ORDER_FILLING_IOC])

@@ -8,7 +8,7 @@ the background, restarts at every Windows logon and retrains itself every weeken
 1. Install **PU Prime MT5**, log in to your **demo** account with **Save password** ticked, and click
    **Algo Trading** so it turns green.
 2. Download **TradV2-XAUUSD-Scalper-Windows-x64.zip**, right-click → **Extract All…** to e.g. `C:\TradV2`, and
-   double-click **START.cmd**. Python and all libraries are included.
+   double-click **START.cmd**. Python and all libraries are included. Extracting takes seconds (about 40 files). The first START unpacks the bundled Python in about 20 seconds.
 3. In the dashboard that opens, press **▶ Start trading**.
    The first start downloads ~7 years of gold history, trains the AI and tunes the rules (10–30 min). Then the bot
    starts trading on its own.
@@ -27,6 +27,50 @@ tab: the bot keeps running, stops Windows from going to sleep while it trades, a
 | Other exits | ATR take-profit, ATR stop-loss (always at the broker), trailing stop, time stop, Friday 21:00 UTC flat. |
 | News | Verified 2019–2026 US calendar (NFP, CPI, PPI, FOMC, retail sales, GDP, PCE, JOLTS, ISM) plus a live ForexFactory feed. No entries 15→5 min before an event (stops tightened). One AI "news scalp" in the ±5 min window. Wider stops for 15 min after. |
 | Risk | 0.5 % per trade. Small-account mode trades 0.01 lot when that risks ≤ 10 % (a €50 start). 15 % daily loss halt, max 2 open / 20 trades a day, spread and slippage filters, survival hard stop, no averaging down, demo accounts only. |
+
+## 🚀 Turbo — the fastest €50 growth found
+
+Research on 7.9 years of data tested about 4,000 variants of 1-minute and 15-minute scalping, your dip-buying
+basket, session breakouts, news momentum and trend-following. Each method then ran a "€50 race": 150 random
+30-day windows (2024–26), compounding from €50 with real Standard costs.
+
+| Method | Doubled €50 within 30 days | Blown | Average after 30 days |
+|---|---|---|---|
+| **🚀 Turbo (hourly trend breakout, wide stops)** | **37–40 %** | **≤ 2 %** | **+36 to +52 %** |
+| Dip-buying basket (your manual style) | 0 % | 100 % | −83 % |
+| 15-min scalping | 0 % | 6 % | −21 % |
+| Default scalping rules | 0 % | 2 % | −27 % |
+
+How Turbo trades:
+- **Entry:** buys when gold breaks above the highest price of the last 24 hours, only while the hourly trend is up.
+- **Position:** one trade at a time.
+- **Exits:** a wide stop that trails behind a winning trade, with a hold of up to 10 hours.
+
+Caveats:
+- **It depends on the bull market:** it is long-only, and its edge came from gold's 2024–25 uptrend. In a falling
+  market it mostly sits out or loses small.
+- **One full stop-loss can cost up to about half of a €50 account.**
+- **Switching it on:** press 🚀 Turbo in the dashboard. Active or Careful switch back to scalping.
+
+## Market analyst — "what happens next?"
+
+* **15-minute chart model:** it reads the 15-minute chart (trend, momentum, volatility, where price sits in the
+  day's range), the hourly trend, silver, the dollar, Nasdaq and the news calendar, and predicts the next 60 minutes.
+  It is trained walk-forward and retrains every weekend. It vetoes trades it strongly disagrees with.
+  Honest out-of-sample result on 2020–2026: AUC 0.521. When it is at least 55 % sure, it calls the next hour right
+  55.9 % of the time.
+* **AI news analyst (optional):** add an Anthropic API key in the dashboard. Every 15 minutes while gold trades,
+  Claude (Opus 5.5) searches the latest gold news and reads the chart summary and the upcoming US releases. It
+  returns a bias, a confidence, and trade conditions (normal / caution / avoid). "Avoid" pauses new entries, and a
+  confident opposite call vetoes a trade. Each call is graded 60 minutes later and its track record is fed back to it.
+  API usage is billed to your Anthropic account.
+
+## Proving real demo trades
+
+* **Place test trade** (dashboard → Setup) opens a 0.01-lot BUY on your demo with a broker-side SL/TP, checks it,
+  and closes it after 5 seconds. It reports fill price, speed and P&L.
+* **⚡ Active** style (default) trades every rule setup the AI agrees with (a few trades a day). **🛡 Careful** only
+  takes high-confidence setups. If MT5 rejects a filling mode, orders retry with another one automatically.
 
 ## How it learns from itself
 

@@ -72,12 +72,17 @@ def download(cfg, data_dir: Path, years: float, say=print, dukascopy_back: bool 
         raise RuntimeError(f"Only {len(gold_df):,} gold M1 bars. Check your internet connection (history download) "
                            f"or in MT5 open View → Symbols → {gold} → Bars and request more history.")
     corr = {k: v["close"] for k, v in out.items() if len(v)}
-    for key, spec in vars(cfg.context).items():
-        if not syms.get(key):
-            corr.pop(key, None)  # not tradable live on this server → never train on it
-            continue
-        if getattr(spec, "hf", ""):
-            s = _older_context(spec.hf, data_dir, corr.get(key), start, say)
+    jobs = {}
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(4) as ex:  # all markets download in parallel
+        for key, spec in vars(cfg.context).items():
+            if not syms.get(key):
+                corr.pop(key, None)  # not tradable live on this server → never train on it
+                continue
+            if getattr(spec, "hf", ""):
+                jobs[key] = ex.submit(_older_context, spec.hf, data_dir, corr.get(key), start, say)
+        for key, fut in jobs.items():
+            s = fut.result()
             if s is not None:
                 corr[key] = s
     corr["_equity"] = equity
@@ -170,6 +175,12 @@ def research(cfg, data_dir: Path, m1: pd.DataFrame, corr: dict, say=print, trial
     sig = compute_signals(f, cfg, events)
     say(f"Rule setups: {(sig.rule_signal != 0).sum():,}")
 
+    say("Market analyst: learning the 15-minute chart (walk-forward) …")
+    from analyst import M15Analyst, m15_frame, outlook_for_m1, walk_forward_m15
+    x15 = m15_frame(m1, corr, events)
+    p15 = walk_forward_m15(x15, say=say)
+    outlook = outlook_for_m1(p15, f.index) if len(p15) else None
+
     say("Walk-forward training (out-of-sample) …")
     p_wf, folds = walk_forward_predictions(f, cfg, log=say)
     say("Hold-out (final months, never seen in training) …")
@@ -177,7 +188,7 @@ def research(cfg, data_dir: Path, m1: pd.DataFrame, corr: dict, say=print, trial
 
     opt = None
     if len(p_wf) > 20_000 and trials > 0:
-        opt = optimize(f, p_wf, events, cfg, data_dir, trials, say=say, equity=equity)
+        opt = optimize(f, p_wf, events, cfg, data_dir, trials, say=say, equity=equity, outlook=outlook)
     elif trials > 0:
         say("Not enough out-of-sample data to retune rules safely (need ~2 weeks of walk-forward predictions).")
     # re-load with tuned.yaml (if adopted) and the real account size for the final report
@@ -197,7 +208,7 @@ def research(cfg, data_dir: Path, m1: pd.DataFrame, corr: dict, say=print, trial
             continue
         ff, ss = f.loc[p.index], sig.loc[p.index]
         d, c = signal_from_proba(p)
-        res = run_with_baselines(ff, ss, cfg, d, c)
+        res = run_with_baselines(ff, ss, cfg, d, c, outlook=outlook.reindex(p.index) if outlook is not None else None)
         y = make_label(ff, cfg.model.label_horizon_m5_bars)
         ok = y.notna()
         sections[name] = dict(results=res, auc=auc(y[ok], p[ok]), period=(p.index.min(), p.index.max()))
@@ -221,6 +232,9 @@ def research(cfg, data_dir: Path, m1: pd.DataFrame, corr: dict, say=print, trial
     model.meta["backtest_win_rate"] = ref["results"]["strategy"]["metrics"]["win_rate_pct"] if ref else 50.0
     model.meta["confidence_threshold"] = cfg.strategy.confidence_threshold
     model.save(data_dir / "model")
+    analyst = M15Analyst.fit(x15)
+    analyst.save(data_dir / "model")
+    say(f"Market analyst trained on {analyst.meta['rows']:,} 15-minute bars (validation AUC {analyst.meta['valid_auc']:.3f}).")
     imp = model.importance(f)
     html = write_report(out_dir, sections, folds, imp, cfg, opt)
     summary = {k: {kk: v["metrics"] for kk, v in s["results"].items()} | {"auc": s["auc"]} for k, s in sections.items()}
@@ -254,8 +268,8 @@ def write_report(out_dir: Path, sections: dict, folds: list, imp: pd.Series, cfg
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     parts = [f"<h1>XAUUSD scalper — backtest report</h1><p>Generated {datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC. "
-             f"Costs: spread per bar (fallback ${cfg.backtest.spread_cost}), ${cfg.backtest.commission_per_side_per_lot}"
-             f"/side/lot commission, {cfg.backtest.slippage_pips} pips slippage. AI threshold "
+             f"Account {cfg.broker.account_type}. Costs: spread per bar (fallback ${cfg.backtest.spread_cost}), "
+             f"${__import__('config').commission_per_side(cfg)}/side/lot commission, {cfg.backtest.slippage_pips} pips slippage. AI threshold "
              f"{cfg.strategy.confidence_threshold}.</p>"]
     for name, s in sections.items():
         res = s["results"]

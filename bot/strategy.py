@@ -148,6 +148,29 @@ def news_phase(idx: pd.DatetimeIndex, events: pd.DatetimeIndex | None, cfg) -> p
     return pd.DataFrame({"news_phase": phase, "event_id": ev_id}, index=idx)
 
 
+def turbo_signal(f: pd.DataFrame, lookback_h: int = 24, ema_fast: int = 20, ema_slow: int = 50) -> pd.Series:
+    """🚀 Turbo: buy the first M1 close above the highest high of the last 24 CLOSED H1 bars, only while the closed-H1
+    EMA20 > EMA50 trend is up; at most one signal per clock hour. Long-only (research: shorts lost in 2019–2025).
+    Decided at the M1 close (no look-ahead: H1 values join on H1 close time)."""
+    idx = f.index
+    g = f[["high", "low", "close"]].resample("60min", label="left", closed="left")
+    h1 = pd.DataFrame({"high": g["high"].max(), "close": g["close"].last()}).dropna()
+    ef = h1.close.ewm(span=ema_fast, adjust=False, min_periods=ema_fast).mean()
+    es = h1.close.ewm(span=ema_slow, adjust=False, min_periods=ema_slow).mean()
+    x = pd.DataFrame({"up": np.sign(ef - es), "hi": h1.high.rolling(lookback_h).max()})
+    x.index = x.index + pd.Timedelta(minutes=60)
+    a = pd.merge_asof(pd.DataFrame(index=idx + pd.Timedelta(minutes=1)), x, left_index=True, right_index=True,
+                      direction="backward")
+    a.index = idx
+    above = (f["close"] > a["hi"]).astype(int)
+    first = (above == 1) & (above.shift(1, fill_value=0) == 0) & (a["up"] > 0)
+    hours = pd.Series(idx.floor("60min"), index=idx)[first]
+    keep = hours.index[~hours.duplicated()]          # at most one entry per clock hour
+    sig = pd.Series(0, index=idx, dtype=int)
+    sig.loc[keep] = 1
+    return sig
+
+
 def compute_signals(f: pd.DataFrame, cfg, events: pd.DatetimeIndex | None = None) -> pd.DataFrame:
     out = pd.DataFrame(index=f.index)
     out["bias"] = m15_bias(f, cfg)
@@ -156,6 +179,8 @@ def compute_signals(f: pd.DataFrame, cfg, events: pd.DatetimeIndex | None = None
     out["trigger"] = m1_trigger(f, cfg)
     out["rule_signal"] = np.where((out["bias"] != 0) & out["at_level"] & (out["trigger"] == out["bias"]),
                                   out["bias"], 0)
+    if str(getattr(cfg.strategy, "mode", "scalp")).lower() == "turbo":
+        out["rule_signal"] = turbo_signal(f)
     out = out.join(session_state(f.index, cfg)).join(news_phase(f.index, events, cfg))
     for col in ("session", "news_phase"):  # categoricals: ~8× smaller than Python string objects
         out[col] = out[col].astype("category")
@@ -165,7 +190,26 @@ def compute_signals(f: pd.DataFrame, cfg, events: pd.DatetimeIndex | None = None
     return out
 
 
-def decide_entry(cfg, *, rule: int, ai_dir: int, conf: float, has_ai: bool, session: str, blocked: bool,
+def decide_entry(cfg, *, outlook_dir: int = 0, outlook_conf: float = 0.0, news: dict | None = None, **kw):
+    """Rules + M1 AI decide; the market analyst (15-min outlook + optional news agent) can veto."""
+    side, slm, tpm, kind, why = _decide_entry(cfg, **kw)
+    an = getattr(cfg, "analyst", None)
+    if side == 0 or an is None or not getattr(an, "enabled", True):
+        return side, slm, tpm, kind, why
+    veto = float(getattr(an, "veto_conf", 0) or 0)
+    if veto and outlook_dir == -side and outlook_conf >= veto:
+        return 0, 0, 0, "", f"15-min outlook disagrees ({outlook_conf:.2f})"
+    if news:
+        if news.get("trade_conditions") == "avoid":
+            return 0, 0, 0, "", "news agent: avoid trading now"
+        nv = float(getattr(an, "news_veto_conf", 0.65) or 0)
+        nd = {"up": 1, "down": -1}.get(news.get("bias"), 0)
+        if nv and nd == -side and float(news.get("confidence", 0)) >= nv:
+            return 0, 0, 0, "", f"news agent expects {news.get('bias')} ({news.get('confidence'):.2f})"
+    return side, slm, tpm, kind, why
+
+
+def _decide_entry(cfg, *, rule: int, ai_dir: int, conf: float, has_ai: bool, session: str, blocked: bool,
                  phase: str, event_id: int, news_used: set, spread_ratio: float, atr_m5: float,
                  slippage_usd: float, bias: int = 0, ai_only_min_conf: float | None = None) -> tuple[int, float, float, str, str]:
     """Single source of truth for entry gating (backtest + live).
@@ -196,6 +240,9 @@ def decide_entry(cfg, *, rule: int, ai_dir: int, conf: float, has_ai: bool, sess
             slm = st.sl_atr * (nw.post_sl_mult if phase == "post" else 1.0)
             return int(ai_dir), slm, st.tp_atr, "ai", "ai_only"
         return 0, 0, 0, "", "no_setup"
+    if not getattr(st, "ai_gate", True):  # Turbo: the breakout rule alone decides
+        slm = st.sl_atr * (nw.post_sl_mult if phase == "post" else 1.0)
+        return int(rule), slm, st.tp_atr, "normal", "setup"
     if ai_dir != rule:
         return 0, 0, 0, "", "ai_disagrees"
     if conf < thr:

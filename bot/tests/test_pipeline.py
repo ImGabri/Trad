@@ -133,3 +133,15 @@ def test_empty_sqlite_table_does_not_poison_dtypes(tmp_path, cfg):
     f = build_features(merged, cfg)
     sig = compute_signals(f, cfg)
     assert np.isfinite(f["obv_slope"].iloc[-1]) and set(sig["rule_signal"].unique()) <= {-1, 0, 1}
+
+
+def test_ensure_model_installs_pretrained(tmp_path, monkeypatch):
+    import main
+    (tmp_path / "assets" / "pretrained").mkdir(parents=True)
+    for n in ("model.txt", "model.json", "m15.txt", "m15.json"):
+        (tmp_path / "assets" / "pretrained" / n).write_text("x")
+    monkeypatch.setattr(main, "APP", tmp_path)
+    monkeypatch.setattr(main, "DATA", tmp_path / "data")
+    assert main.ensure_model() and (tmp_path / "data" / "model" / "m15.txt").exists()
+    (tmp_path / "data" / "model" / "model.txt").write_text("mine")
+    assert main.ensure_model() and (tmp_path / "data" / "model" / "model.txt").read_text() == "mine"  # never overwrites

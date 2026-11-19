@@ -66,10 +66,16 @@ def doctor(cfg):
         print("MetaTrader5 package missing — run this on Windows from START.cmd."); return 1
     conn = MT5Connection(cfg)
     if not conn.connect():
+        _save_check(ok=False, error=str(mt5.last_error()))
         print(f"✗ Cannot connect to MT5: {mt5.last_error()}\n  Open the PUPrime MT5 terminal, log in to your demo, "
               "and keep it running."); return 1
     acc, term = mt5.account_info(), mt5.terminal_info()
     gold = conn.resolve_gold(cfg.symbols.primary)
+    from data import remember_terminal
+    remember_terminal(DATA)
+    _save_check(ok=True, login=acc.login, server=acc.server, demo=acc.trade_mode == mt5.ACCOUNT_TRADE_MODE_DEMO,
+                algo=bool(term.trade_allowed), symbol=gold, currency=acc.currency, equity=acc.equity,
+                balance=acc.balance, leverage=acc.leverage)
     suffix = gold[len(cfg.symbols.primary):]
     spec = conn.symbol_spec(gold)
     tick = mt5.symbol_info_tick(gold)
@@ -95,7 +101,7 @@ def doctor(cfg):
     return 0
 
 
-def prepare(cfg, years: float, dukascopy: bool = True, trials: int = 120, quiet: bool = False):
+def prepare(cfg, years: float, dukascopy: bool = True, trials: int = 60, quiet: bool = False):
     from prepare import download, research
     say = logging.getLogger("prepare").info if quiet else print
     say(f"Downloading {years:g} years of gold history (your PU Prime bars + public OANDA history for older years) …")
@@ -120,8 +126,25 @@ def import_codex(cfg, paths):
     print("Imported. Option 2 merges this with MT5 history.")
 
 
+def ensure_model() -> bool:
+    """Instant start: if no model has been trained on this PC yet, install the pre-trained models shipped with
+    the release (trained on 2019–2026 gold history). The first weekend retrain replaces them with your own."""
+    import shutil
+    dst, src = DATA / "model", APP / "assets" / "pretrained"
+    if (dst / "model.txt").exists():
+        return True
+    if not (src / "model.txt").exists():
+        return False
+    dst.mkdir(parents=True, exist_ok=True)
+    for p in src.iterdir():
+        shutil.copyfile(p, dst / p.name)
+    logging.getLogger("main").info("installed pre-trained models — trading can start immediately")
+    return True
+
+
 def run_live(cfg, mode: str, keep_running=lambda: True, auto_retrain: bool = False):
     from live import Runner
+    ensure_model()
     if not (DATA / "model" / "model.txt").exists():
         raise SystemExit("No AI model yet — run option 2 (prepare) first.")
     if (DATA / "STOP").exists():
@@ -145,7 +168,7 @@ def worker():
     status = Status(DATA / "status.json")
     while active():
         try:
-            if not (DATA / "model" / "model.txt").exists():  # started before the first training finished
+            if not ensure_model():  # no bundled models and none trained yet
                 status.update(state="retrain", detail="first-time training")
                 prepare(cfg, cfg.history.years, quiet=True)
             why = run_live(cfg, background.read_control(APP)["mode"], active, auto_retrain=True)
@@ -154,7 +177,7 @@ def worker():
             if why == "retrain":  # weekend: learn from everything collected this week, then carry on
                 status.update(state="retrain", detail="weekly retrain on all saved data")
                 log.info("weekly retrain starting")
-                prepare(cfg, cfg.history.years, quiet=True)
+                prepare(cfg, cfg.history.years, quiet=True, trials=120)
                 delay = 5
                 cfg = load_config(APP / "config.yaml")
                 continue
@@ -169,6 +192,52 @@ def worker():
         delay = min(120, delay * 2)
         cfg = load_config(APP / "config.yaml")
     status.update(state="stopped")
+
+
+def _save_check(**kw):
+    DATA.mkdir(exist_ok=True)
+    (DATA / "mt5_check.json").write_text(json.dumps(dict(kw, time=time.time()), default=str))
+
+
+def test_trade(cfg):
+    """Prove the full order path: open 0.01 lot BUY with broker-side SL/TP, wait 5 s, close, report."""
+    import execution as ex
+    from data import MT5Connection, mt5
+    conn = MT5Connection(cfg)
+    if not conn.connect():
+        print(f"✗ Cannot connect to MT5: {mt5.last_error()}"); return 1
+    acc, term = mt5.account_info(), mt5.terminal_info()
+    if acc.trade_mode != mt5.ACCOUNT_TRADE_MODE_DEMO:
+        print("✗ This is not a demo account — test trades only run on demo."); return 1
+    if not term.trade_allowed:
+        print("✗ Click the 'Algo Trading' button in MT5 so it turns green, then try again."); return 1
+    gold = conn.resolve_gold(cfg.symbols.primary)
+    info, tick = mt5.symbol_info(gold), mt5.symbol_info_tick(gold)
+    if tick is None or not tick.bid:
+        print("✗ No price from MT5 — gold may be closed (Fri 22:00 → Sun 22:00 UTC)."); return 1
+    print(f"Account #{acc.login} {acc.server} equity {acc.equity:.2f} {acc.currency}")
+    print(f"Sending test BUY {info.volume_min} {gold} at ~{tick.ask:.2f} (SL −$5, TP +$5) …")
+    dev = int(cfg.risk.max_slippage_pips * cfg.instrument.pip_size / info.point)
+    t0 = time.time()
+    fill = ex.open_market(gold, 1, info.volume_min, 5.0, 5.0, dev, "xau-v2 test")
+    if not fill.ok:
+        print(f"✗ MT5 rejected the order: {fill.retcode} {fill.comment}"); return 1
+    print(f"✓ Filled at {fill.price:.2f} in {1000 * (time.time() - t0):.0f} ms, slippage ${fill.price - fill.requested:+.2f}")
+    time.sleep(5)
+    pos = [p for p in ex.bot_positions(gold) if p.ticket == fill.ticket or getattr(p, "identifier", 0) == fill.ticket]
+    if not pos:
+        print("• Position already closed by SL/TP."); return 0
+    print(f"  Broker-side SL {pos[0].sl:.2f} / TP {pos[0].tp:.2f} confirmed. Closing …")
+    c = ex.close_position(pos[0], dev, "xau-v2 test close")
+    if not c.ok:
+        print(f"✗ Close failed ({c.retcode}) — close ticket {fill.ticket} manually in MT5."); return 1
+    time.sleep(1)
+    res = ex.closed_pnl(pos[0].ticket)
+    pnl = f"{res[0]:+.2f} {acc.currency}" if res else "see MT5 history"
+    print(f"✓ Closed at {c.price:.2f}. Test trade P&L {pnl} (mostly the spread). The bot can trade this account.")
+    _save_check(ok=True, login=acc.login, server=acc.server, demo=True, algo=True, symbol=gold,
+                currency=acc.currency, equity=mt5.account_info().equity, balance=acc.balance, test_trade_ok=True)
+    return 0
 
 
 def kill(cfg):
@@ -328,9 +397,9 @@ def cli():
     sub = ap.add_subparsers(dest="cmd")
     sub.add_parser("menu"); sub.add_parser("doctor"); sub.add_parser("watch"); sub.add_parser("demo")
     sub.add_parser("worker"); sub.add_parser("kill"); sub.add_parser("reset"); sub.add_parser("smoke")
-    sub.add_parser("status")
+    sub.add_parser("status"); sub.add_parser("test-trade")
     p = sub.add_parser("prepare"); p.add_argument("--years", type=float, default=7)
-    p.add_argument("--no-dukascopy", action="store_true"); p.add_argument("--trials", type=int, default=120)
+    p.add_argument("--no-dukascopy", action="store_true"); p.add_argument("--trials", type=int, default=60)
     sub.add_parser("ui")
     p = sub.add_parser("import-csv"); p.add_argument("path"); p.add_argument("--utc-offset", type=float, default=0)
     p = sub.add_parser("import-codex"); p.add_argument("paths", nargs="+")
@@ -353,6 +422,8 @@ def cli():
     cfg = cfg_and_logs()
     if a.cmd == "doctor":
         return doctor(cfg)
+    if a.cmd == "test-trade":
+        return test_trade(cfg)
     if a.cmd == "prepare":
         result = prepare(cfg, a.years, not a.no_dukascopy, a.trials)
         # Write live state for UI dashboard

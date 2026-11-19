@@ -148,6 +148,53 @@ def _user_settings() -> dict:
     return {k: getattr(getattr(cfg, sec), k, None) for k, (sec, *_rest) in USER_KEYS.items()}
 
 
+STYLES = {  # one click instead of editing numbers
+    "active": {"strategy": {"confidence_threshold": 0.5, "ai_only_min_conf": 0.0},
+               "sessions": {"asia_min_confidence": 0.55}},
+    "careful": {"strategy": {"confidence_threshold": 0.65, "ai_only_min_conf": 0.0},
+                "sessions": {"asia_min_confidence": 0.75}},
+    # 🚀 Turbo — winner of the €50 race (150 random 30-day windows 2024–26): doubled €50 in 40 %, blown 1–2 %
+    "turbo": {"strategy": {"mode": "turbo", "ai_gate": False, "sl_atr": 6.0, "tp_atr": 30.0, "trail_trigger_atr": 8.0,
+                           "trail_distance_atr": 6.0, "time_stop_minutes": 600, "equity_tp_pct": 0.0, "ai_only_min_conf": 0.0},
+              "risk": {"min_lot_max_risk_pct": 70, "max_concurrent": 1, "daily_loss_limit_pct": 30, "survival_multiplier": 1.0},
+              "analyst": {"veto_conf": 0.0}},
+}
+for _k in ("active", "careful"):  # leaving Turbo restores the scalping engine
+    STYLES[_k].setdefault("strategy", {}).update(mode="scalp", ai_gate=True)
+
+
+def _trades(limit: int = 15) -> tuple[list, list]:
+    """Recent bot trades and the cumulative closed P&L curve, straight from data/xau.db."""
+    import sqlite3
+    db = DATA / "xau.db"
+    if not db.exists():
+        return [], []
+    try:
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=2)
+        rows = con.execute("SELECT ticket, side, lots, open_time, open_price, close_price, pnl, reason_close, confidence "
+                           "FROM trades ORDER BY open_time DESC LIMIT ?", (limit,)).fetchall()
+        curve = con.execute("SELECT close_time, pnl FROM trades WHERE pnl IS NOT NULL ORDER BY close_time "
+                            "DESC LIMIT 300").fetchall()[::-1]
+        con.close()
+    except sqlite3.Error:
+        return [], []
+    keys = ["ticket", "side", "lots", "open_time", "open", "close", "pnl", "reason", "conf"]
+    cum, pts = 0.0, []
+    for t, p in curve:
+        cum += p or 0
+        pts.append([t, round(cum, 2)])
+    return [dict(zip(keys, r)) for r in rows], pts
+
+
+def _style() -> str:
+    from config import load_config
+    st = load_config(APP / "config.yaml").strategy
+    if str(getattr(st, "mode", "scalp")) == "turbo":
+        return "turbo"
+    thr = st.confidence_threshold
+    return "active" if thr <= 0.55 else "careful"
+
+
 def state() -> dict:
     import background
     from monitor import Status
@@ -164,8 +211,11 @@ def state() -> dict:
                    valid_auc=meta.get("valid_auc"), win_rate=meta.get("backtest_win_rate")),
         tuned=dict(adopted=tuned, validate=chosen), report=(DATA / "report" / "report.html").exists(),
         telegram=bool(env.get("TELEGRAM_TOKEN") and env.get("TELEGRAM_CHAT_ID")),
+        news_key=bool(env.get("ANTHROPIC_API_KEY")),
         mt5_login=env.get("MT5_LOGIN", ""), mt5_server=env.get("MT5_SERVER", ""),
         stop_file=(DATA / "STOP").exists(), settings=_user_settings(),
+        check=_read_json(DATA / "mt5_check.json"), style=_style(),
+        trades=_trades()[0], curve=_trades()[1],
     )
 
 
@@ -174,7 +224,8 @@ def _start_bot(mode: str) -> str:
     import background
     if (DATA / "STOP").exists():
         return "Kill switch active. Review it before using Reset safety stops."
-    if not (DATA / "model" / "model.txt").exists():
+    from main import ensure_model
+    if not ensure_model():  # no bundled models (source checkout): train first
         ok = JOB.start("First-time setup: downloading history, training the AI, tuning the rules",
                        ["prepare"], after=lambda rc: rc == 0 and background.start(APP, mode))
         return "Setting up (first time only) — the bot starts by itself when training is done." if ok else "Busy."
@@ -212,6 +263,24 @@ def _telegram(token: str) -> str:
     return "Telegram connected — a test message was sent. Restart the bot to apply."
 
 
+def _restart_if_running() -> str:
+    import background
+    st = background.status(APP)
+    if st.get("background") == "on":
+        background.start(APP, st.get("mode") or "demo")
+        return " The bot restarted with the new settings."
+    return ""
+
+
+def _write_user(updates: dict):
+    from config import _deep_update
+    p = DATA / "user.yaml"
+    cur = (yaml.safe_load(p.read_text()) if p.exists() else {}) or {}
+    _deep_update(cur, updates)
+    DATA.mkdir(exist_ok=True)
+    p.write_text(yaml.safe_dump(cur, sort_keys=False))
+
+
 def _save_settings(body: dict) -> str:
     p = DATA / "user.yaml"
     cur = yaml.safe_load(p.read_text()) if p.exists() else {}
@@ -229,7 +298,7 @@ def _save_settings(body: dict) -> str:
         cur.setdefault(sec, {})[k] = v
     DATA.mkdir(exist_ok=True)
     p.write_text(yaml.safe_dump(cur, sort_keys=False))
-    return "Saved. Restart the bot (Stop → Start) to apply."
+    return "Saved." + _restart_if_running()
 
 
 def _open(what: str) -> str:
@@ -267,6 +336,25 @@ def action(name: str, body: dict) -> str:
         return "Saved on this PC (.env). The bot will log MT5 in by itself after a reboot."
     if name == "settings":
         return _save_settings(body)
+    if name == "anthropic":
+        key = str(body.get("key", "")).strip()
+        if key and not key.startswith("sk-ant-"):
+            return "That doesn't look like an Anthropic API key (it starts with sk-ant-)."
+        _write_env({"ANTHROPIC_API_KEY": key} if key else {"ANTHROPIC_API_KEY": ""})
+        return ("Saved — Claude will read live gold news every 15 minutes." if key else "News agent turned off.") + \
+            _restart_if_running()
+    if name == "style":
+        style = body.get("style")
+        if style not in STYLES:
+            return "Unknown style."
+        _write_user(STYLES[style])
+        msg = {"active": "Active: trades every setup the AI agrees with.",
+               "careful": "Careful: only high-confidence setups.",
+               "turbo": "🚀 Turbo: hourly trend breakouts, wide stops — best €50 growth in testing (high risk per trade)."}
+        return msg[style] + _restart_if_running()
+    if name == "test_trade":
+        return ("Placing a 0.01-lot test trade on your demo…" if JOB.start("Test trade on your demo account",
+                                                                            ["test-trade"]) else "Busy.")
     if name == "open":
         return _open(body.get("what", ""))
     if name == "quit":

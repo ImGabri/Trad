@@ -31,7 +31,9 @@ def cfg(**strategy):
         "backtest": {"initial_equity": 58.0, "slippage_pips": 0},
         "risk": {"min_lot_max_risk_pct": 10, "daily_loss_limit_pct": 50},
         "strategy": dict(dict(equity_tp_pct=1.0, equity_tp_hold_conf=0.55, equity_tp_lock_frac=0.5,
-                              time_stop_minutes=60, trail_trigger_atr=99, tp_atr=50), **strategy)})
+                              time_stop_minutes=60, trail_trigger_atr=99, tp_atr=50, sl_atr=1.0,
+                              ai_only_min_conf=0.0), **strategy),
+        "analyst": {"veto_conf": 0.0}})
     return c
 
 

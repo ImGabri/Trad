@@ -33,6 +33,8 @@ def test_runner_trades_and_kill(tmp_path):
     model = DirectionModel.fit(f, cfg, rounds=60)
     model.meta["backtest_win_rate"] = 45
     model.save(tmp_path / "data" / "model")
+    from analyst import M15Analyst, m15_frame
+    M15Analyst.fit(m15_frame(m1.iloc[:20000])).save(tmp_path / "data" / "model")
 
     n = {"i": 0}
     def keep():

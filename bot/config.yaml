@@ -42,36 +42,38 @@ sessions:                    # all times UTC
   london:  ["07:00", "16:00"]
   newyork: ["13:00", "21:00"]
   asia:    ["00:00", "07:00"]
-  asia_min_confidence: 0.75  # Asia: only enter when AI confidence is high
-  asia_enabled: true
+  asia_min_confidence: 0.55  # Asia: a bit more AI agreement needed (Careful = 0.75)
+  asia_enabled: false
 
-strategy:
+strategy:   # defaults tuned for a €50 PU Prime Standard account (least-losing of 400 trials, 2019–2026)
   m15_ema_fast: 50
   m15_ema_slow: 200
   m15_slope_lookback: 3
-  m15_adx_min: 20
-  level_tolerance_atr: 0.25  # price within this × ATR(M5) of a key level
+  m15_adx_min: 15
+  level_tolerance_atr: 0.4  # price within this × ATR(M5) of a key level
   fib_levels: [0.618, 0.786]
   fib_swing_bars_m5: 48      # swing range for fib levels (4h of M5)
   m1_trigger_bars: 3         # consecutive M1 candles in bias direction
   require_rising_volume: true
   vol_confirm_mult: 1.2      # vol filter: require above-median vol when above mult×median
   atr_period: 14
-  tp_atr: 1.5
-  sl_atr: 1.0
-  trail_trigger_atr: 1.0
-  trail_distance_atr: 0.5
-  time_stop_minutes: 15
-  confidence_threshold: 0.65
+  tp_atr: 2.0
+  sl_atr: 0.5
+  trail_trigger_atr: 0.5
+  trail_distance_atr: 0.75
+  time_stop_minutes: 20
+  mode: scalp                # scalp (rules + AI) | turbo (hourly trend breakout — dashboard 🚀 Turbo)
+  ai_gate: true
+  confidence_threshold: 0.5   # "Active" demo style: trade every rule setup the AI agrees with (Careful = 0.65)
   # Equity take-profit: close a trade once it is +X % of account equity in profit — unless the AI still
   # expects the move to continue (P(direction) >= hold_conf); then lock lock_frac of that gain with the SL
   # and keep riding, leaving as soon as the AI stops agreeing.
-  equity_tp_pct: 1.0
-  equity_tp_hold_conf: 0.55
+  equity_tp_pct: 3.0
+  equity_tp_hold_conf: 0.5
   equity_tp_lock_frac: 0.5
   # Fast mode: when > 0, the AI alone may open a trade (no rule setup needed) at this confidence or higher,
   # never against the M15 bias. 0 = off.
-  ai_only_min_conf: 0.0
+  ai_only_min_conf: 0.7
 
   # === Continuous Trading Options ===
   skip_market_open_check: false  # When true, bot trades uninterrupted skipping market open/close checks
@@ -84,8 +86,8 @@ risk:
   min_lot_max_risk_pct: 10
   risk_per_trade_pct: 0.5
   daily_loss_limit_pct: 15   # spec said 2 %, but one min-lot loss on €50 is ~7 % → allow ~2 losses/day
-  max_concurrent: 2
-  max_daily_trades: 20
+  max_concurrent: 3
+  max_daily_trades: 40
   survival_multiplier: 1.5   # hard stop if equity <= (margin_0.01 + SL_loss_0.01) × this
   spread_filter_mult: 2.0    # no entry if spread > mult × 20-bar avg
   spread_avg_bars: 20
@@ -106,6 +108,15 @@ news:
   news_scalp_tp_atr: 2.0
   post_window_min: [5, 15]   # T+5 .. T+15: SL × 1.2
   post_sl_mult: 1.2
+
+analyst:                     # "what will probably happen next" — see analyst.py
+  enabled: true
+  veto_conf: 0.55            # skip a trade when the 15-min outlook points the other way with ≥ this confidence
+  news_agent: auto           # Claude reads live gold news every 15 min (auto = on when an Anthropic API key is set)
+  news_model: claude-opus-5-5
+  news_interval_min: 15
+  news_effort: medium
+  news_veto_conf: 0.65       # skip a trade when the news agent expects the opposite with ≥ this confidence
 
 history:
   years: 7                   # training history (broker bars + public OANDA data for older years)
