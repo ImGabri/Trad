@@ -170,6 +170,12 @@ def research(cfg, data_dir: Path, m1: pd.DataFrame, corr: dict, say=print, trial
     sig = compute_signals(f, cfg, events)
     say(f"Rule setups: {(sig.rule_signal != 0).sum():,}")
 
+    say("Market analyst: learning the 15-minute chart (walk-forward) …")
+    from analyst import M15Analyst, m15_frame, outlook_for_m1, walk_forward_m15
+    x15 = m15_frame(m1, corr, events)
+    p15 = walk_forward_m15(x15, say=say)
+    outlook = outlook_for_m1(p15, f.index) if len(p15) else None
+
     say("Walk-forward training (out-of-sample) …")
     p_wf, folds = walk_forward_predictions(f, cfg, log=say)
     say("Hold-out (final months, never seen in training) …")
@@ -177,7 +183,7 @@ def research(cfg, data_dir: Path, m1: pd.DataFrame, corr: dict, say=print, trial
 
     opt = None
     if len(p_wf) > 20_000 and trials > 0:
-        opt = optimize(f, p_wf, events, cfg, data_dir, trials, say=say, equity=equity)
+        opt = optimize(f, p_wf, events, cfg, data_dir, trials, say=say, equity=equity, outlook=outlook)
     elif trials > 0:
         say("Not enough out-of-sample data to retune rules safely (need ~2 weeks of walk-forward predictions).")
     # re-load with tuned.yaml (if adopted) and the real account size for the final report
@@ -197,7 +203,7 @@ def research(cfg, data_dir: Path, m1: pd.DataFrame, corr: dict, say=print, trial
             continue
         ff, ss = f.loc[p.index], sig.loc[p.index]
         d, c = signal_from_proba(p)
-        res = run_with_baselines(ff, ss, cfg, d, c)
+        res = run_with_baselines(ff, ss, cfg, d, c, outlook=outlook.reindex(p.index) if outlook is not None else None)
         y = make_label(ff, cfg.model.label_horizon_m5_bars)
         ok = y.notna()
         sections[name] = dict(results=res, auc=auc(y[ok], p[ok]), period=(p.index.min(), p.index.max()))
@@ -221,6 +227,9 @@ def research(cfg, data_dir: Path, m1: pd.DataFrame, corr: dict, say=print, trial
     model.meta["backtest_win_rate"] = ref["results"]["strategy"]["metrics"]["win_rate_pct"] if ref else 50.0
     model.meta["confidence_threshold"] = cfg.strategy.confidence_threshold
     model.save(data_dir / "model")
+    analyst = M15Analyst.fit(x15)
+    analyst.save(data_dir / "model")
+    say(f"Market analyst trained on {analyst.meta['rows']:,} 15-minute bars (validation AUC {analyst.meta['valid_auc']:.3f}).")
     imp = model.importance(f)
     html = write_report(out_dir, sections, folds, imp, cfg, opt)
     summary = {k: {kk: v["metrics"] for kk, v in s["results"].items()} | {"auc": s["auc"]} for k, s in sections.items()}

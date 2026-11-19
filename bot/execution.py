@@ -33,6 +33,35 @@ def _filling(info) -> int:
     return mt5.ORDER_FILLING_RETURN
 
 
+INVALID_FILL, REQUOTE, PRICE_CHANGED, PRICE_OFF = 10030, 10004, 10020, 10021
+
+
+def _send_deal(req: dict, info, side: int):
+    """order_send with the broker-quirk retries brokers need in practice:
+    unsupported filling mode → try the other modes; requote / price moved → refresh the price once."""
+    modes = [req["type_filling"]] + [m for m in (mt5.ORDER_FILLING_FOK, mt5.ORDER_FILLING_IOC,
+                                                  mt5.ORDER_FILLING_RETURN) if m != req["type_filling"]]
+    res, refreshed = None, False
+    for mode in modes:
+        req["type_filling"] = mode
+        res = _send_demo(req)
+        if res is not None and res.retcode in (REQUOTE, PRICE_CHANGED, PRICE_OFF) and not refreshed:
+            tick = mt5.symbol_info_tick(req["symbol"])
+            if tick is not None:
+                new = tick.ask if side > 0 else tick.bid
+                shift = new - req["price"]
+                req["price"] = new
+                for k in ("sl", "tp"):
+                    if req.get(k):
+                        req[k] = _round(req[k] + shift, info)
+                refreshed = True
+                res = _send_demo(req)
+        if res is None or res.retcode != INVALID_FILL:
+            return res
+        log.info("filling mode %s rejected, trying the next one", mode)
+    return res
+
+
 def _round(price: float, info) -> float:
     return round(round(price / info.trade_tick_size) * info.trade_tick_size, info.digits)
 
@@ -61,7 +90,7 @@ def open_market(symbol: str, side: int, lots: float, sl_dist: float, tp_dist: fl
                sl=_round(price - side * sl_dist, info), tp=_round(price + side * tp_dist, info),
                deviation=int(deviation_points), magic=MAGIC, comment=comment[:31],
                type_time=mt5.ORDER_TIME_GTC, type_filling=_filling(info))
-    res = _send_demo(req)
+    res = _send_deal(req, info, side)
     if res is None:
         return Fill(False, requested=price, comment=str(mt5.last_error()))
     ok = res.retcode in (mt5.TRADE_RETCODE_DONE, mt5.TRADE_RETCODE_PLACED)
@@ -93,10 +122,10 @@ def close_position(pos, deviation_points: int, comment: str = "close") -> Fill:
     info, tick = mt5.symbol_info(pos.symbol), mt5.symbol_info_tick(pos.symbol)
     buy = pos.type == mt5.POSITION_TYPE_BUY
     price = tick.bid if buy else tick.ask
-    res = _send_demo(dict(action=mt5.TRADE_ACTION_DEAL, symbol=pos.symbol, volume=pos.volume,
-                              type=mt5.ORDER_TYPE_SELL if buy else mt5.ORDER_TYPE_BUY, position=pos.ticket,
-                              price=price, deviation=int(deviation_points), magic=MAGIC, comment=comment[:31],
-                              type_time=mt5.ORDER_TIME_GTC, type_filling=_filling(info)))
+    res = _send_deal(dict(action=mt5.TRADE_ACTION_DEAL, symbol=pos.symbol, volume=pos.volume,
+                          type=mt5.ORDER_TYPE_SELL if buy else mt5.ORDER_TYPE_BUY, position=pos.ticket,
+                          price=price, deviation=int(deviation_points), magic=MAGIC, comment=comment[:31],
+                          type_time=mt5.ORDER_TIME_GTC, type_filling=_filling(info)), info, -1 if buy else 1)
     ok = bool(res and res.retcode == mt5.TRADE_RETCODE_DONE)
     if not ok:
         log.error("close failed #%s: %s", pos.ticket, res.comment if res else mt5.last_error())

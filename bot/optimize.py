@@ -39,6 +39,7 @@ SPACE = {
     "strategy.ai_only_min_conf": [0.0, 0.0, 0.6, 0.65, 0.7],
     "risk.max_daily_trades": [20, 40, 80],
     "risk.max_concurrent": [1, 2, 3],
+    "analyst.veto_conf": [0.0, 0.55, 0.6, 0.65],
 }
 SIGNAL_KEYS = {"strategy.m1_trigger_bars", "strategy.require_rising_volume", "strategy.level_tolerance_atr",
                "strategy.m15_adx_min", "sessions.asia_enabled"}
@@ -79,7 +80,7 @@ def score(res: dict, min_trades: int) -> dict:
 
 
 def optimize(f: pd.DataFrame, p_up: pd.Series, events, cfg, data_dir: Path, trials: int = 60, seed: int = 7,
-             say=print, equity: float | None = None) -> dict:
+             say=print, equity: float | None = None, outlook: pd.DataFrame | None = None) -> dict:
     equity = float(equity or cfg.backtest.initial_equity)
     p_up = p_up.dropna()
     idx = p_up.index
@@ -88,6 +89,8 @@ def optimize(f: pd.DataFrame, p_up: pd.Series, events, cfg, data_dir: Path, tria
     tmask, vmask = idx < cut, idx >= cut
     f_t, f_v = f.loc[idx[tmask]], f.loc[idx[vmask]]  # sliced once — no per-trial copies
     d_t, c_t, d_v, c_v = d[tmask], c[tmask], d[vmask], c[vmask]
+    ol_t = outlook.reindex(idx[tmask]) if outlook is not None else None
+    ol_v = outlook.reindex(idx[vmask]) if outlook is not None else None
     rng = random.Random(seed)
     base = {k: _get(cfg, k) for k in SPACE}
     cands = [base] + [{k: rng.choice(v) for k, v in SPACE.items()} for _ in range(trials)]
@@ -110,7 +113,7 @@ def optimize(f: pd.DataFrame, p_up: pd.Series, events, cfg, data_dir: Path, tria
     for done, k in enumerate(order):
         flat = cands[k]
         cf = _cfg_with(cfg, flat, equity)
-        res = run_backtest(f_t, signals("tune", flat, cf), cf, d_t, c_t, label=f"trial{k}")
+        res = run_backtest(f_t, signals("tune", flat, cf), cf, d_t, c_t, label=f"trial{k}", outlook=ol_t)
         sc = score(res, min_trades)
         results.append((sc["score"], k, flat, sc))
         if done % 10 == 0:
@@ -122,7 +125,7 @@ def optimize(f: pd.DataFrame, p_up: pd.Series, events, cfg, data_dir: Path, tria
     chosen = None
     for sc_, k, flat, tune_sc in results[:5]:  # validate the top 5, adopt the best that holds up
         cf = _cfg_with(cfg, flat, equity)
-        val = score(run_backtest(f_v, signals("validate", flat, cf), cf, d_v, c_v), 10)
+        val = score(run_backtest(f_v, signals("validate", flat, cf), cf, d_v, c_v, outlook=ol_v), 10)
         report.append(dict(trial=k, params=flat, tune=tune_sc, validate=val))
         if (chosen is None and tune_sc["score"] > 0 and val["n"] >= 10 and val["growth_pct"] > 0
                 and val["pf"] > 1.0 and not val["blown"]):

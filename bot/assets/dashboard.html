@@ -6,167 +6,212 @@
 <title>XAU Scalper</title>
 <link rel="icon" href="/favicon.ico">
 <style>
-:root{--bg:#f6f5f1;--card:#fff;--ink:#1d1d1f;--mute:#6b6b70;--line:#e6e3dc;--gold:#b8860b;--gold2:#e9c46a;
---ok:#1f8a4c;--bad:#c0392b;--warn:#b7791f;--btn:#1d1d1f;--btnink:#fff;--shadow:0 1px 2px rgba(0,0,0,.05),0 4px 16px rgba(0,0,0,.04)}
-@media (prefers-color-scheme:dark){:root{--bg:#121214;--card:#1c1c1f;--ink:#ececf0;--mute:#9a9aa3;--line:#2c2c31;
---gold:#e9c46a;--gold2:#b8860b;--btn:#ececf0;--btnink:#121214;--shadow:none}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 "Segoe UI Variable","Segoe UI",system-ui,sans-serif}
-header{display:flex;align-items:center;gap:12px;padding:16px 24px;border-bottom:1px solid var(--line);background:var(--card)}
-.logo{width:30px;height:30px;border-radius:50%;background:radial-gradient(circle at 35% 30%,var(--gold2),var(--gold));display:grid;place-items:center;color:#fff;font-weight:700;font-size:12px}
-header h1{font-size:17px;margin:0;font-weight:650}header .v{color:var(--mute);font-size:12px}
-.pill{margin-left:auto;padding:4px 12px;border-radius:999px;font-weight:600;font-size:12px;background:var(--line)}
-.pill.ok{background:rgba(31,138,76,.14);color:var(--ok)}.pill.bad{background:rgba(192,57,43,.14);color:var(--bad)}.pill.warn{background:rgba(183,121,31,.15);color:var(--warn)}
-main{max-width:1180px;margin:0 auto;padding:20px 16px 40px;display:grid;gap:16px;grid-template-columns:repeat(12,1fr)}
-.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;box-shadow:var(--shadow);min-width:0}
-.card h2{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--mute);margin:0 0 12px;font-weight:600}
-.span12{grid-column:span 12}.span8{grid-column:span 8}.span6{grid-column:span 6}.span4{grid-column:span 4}
-@media (max-width:900px){.span8,.span6,.span4{grid-column:span 12}}
-.hero{display:flex;flex-wrap:wrap;align-items:center;gap:16px}.hero .big{font-size:22px;font-weight:650}.hero .sub{color:var(--mute)}
-.btns{display:flex;flex-wrap:wrap;gap:8px;margin-left:auto}
-button{font:inherit;font-weight:600;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:9px 16px;border-radius:10px;cursor:pointer}
-button:hover{filter:brightness(.97)}button:disabled{opacity:.45;cursor:default}
-button.primary{background:var(--btn);color:var(--btnink);border-color:var(--btn)}button.gold{background:var(--gold);border-color:var(--gold);color:#fff}
-button.danger{color:var(--bad);border-color:rgba(192,57,43,.4)}button.small{padding:6px 11px;font-size:13px}
-.kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.kpi .l{color:var(--mute);font-size:12px}.kpi .n{font-size:20px;font-weight:650;font-variant-numeric:tabular-nums}
-.pos{color:var(--ok)}.neg{color:var(--bad)}
-.tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
-table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}td{white-space:nowrap}th,td{padding:7px 6px;text-align:right;border-bottom:1px solid var(--line)}th:first-child,td:first-child{text-align:left}th{color:var(--mute);font-weight:600;font-size:12px}
-.muted{color:var(--mute)}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-pre{margin:0;max-height:260px;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px;font:12px/1.5 Consolas,ui-monospace,monospace;white-space:pre-wrap}
-label{display:block;font-size:12px;color:var(--mute);margin-bottom:4px}input{font:inherit;width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:var(--bg);color:var(--ink)}
-.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
-.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--btn);color:var(--btnink);padding:10px 18px;border-radius:10px;font-weight:600;opacity:0;transition:opacity .2s;max-width:90vw}
-.toast.show{opacity:1}details summary{cursor:pointer;color:var(--mute);font-weight:600}
+:root{--bg:#0d0f13;--panel:#151922;--panel2:#1b2030;--ink:#e9ecf2;--mute:#8b93a7;--line:#262c3b;
+--gold:#e8b84a;--gold2:#a8771b;--ok:#2fbf71;--bad:#ef5350;--warn:#f0a43a;--glow:0 0 0 1px rgba(232,184,74,.25),0 8px 30px rgba(232,184,74,.12)}
+@media (prefers-color-scheme:light){:root{--bg:#f4f2ec;--panel:#fff;--panel2:#faf8f3;--ink:#1b1d22;--mute:#6b7080;--line:#e6e1d5;
+--gold:#b8860b;--gold2:#e9c46a;--glow:0 0 0 1px rgba(184,134,11,.25),0 8px 30px rgba(184,134,11,.10)}}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 "Segoe UI Variable","Segoe UI",system-ui,sans-serif}
+button,input{font:inherit;color:inherit}
+.top{display:flex;align-items:center;gap:12px;padding:14px 22px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:5}
+.logo{width:32px;height:32px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ffe29a,var(--gold) 55%,var(--gold2));display:grid;place-items:center;color:#1b1406;font-weight:800;font-size:12px;box-shadow:0 0 18px rgba(232,184,74,.35)}
+.top h1{font-size:16px;margin:0;font-weight:700;letter-spacing:.2px}.top .v{color:var(--mute);font-size:12px}
+.pill{margin-left:auto;display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;font-weight:700;font-size:12px;background:var(--panel2);border:1px solid var(--line)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--mute)}.pill.ok .dot{background:var(--ok);box-shadow:0 0 10px var(--ok);animation:pulse 1.6s infinite}
+.pill.warn .dot{background:var(--warn)}.pill.bad .dot{background:var(--bad)}
+@keyframes pulse{50%{opacity:.35}}
+main{max-width:1200px;margin:0 auto;padding:18px 16px 48px;display:grid;gap:14px;grid-template-columns:repeat(12,1fr)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;min-width:0}
+.card h2{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--mute);margin:0 0 12px;font-weight:700}
+.s12{grid-column:span 12}.s8{grid-column:span 8}.s7{grid-column:span 7}.s5{grid-column:span 5}.s4{grid-column:span 4}.s6{grid-column:span 6}
+@media (max-width:920px){.s8,.s7,.s5,.s4,.s6{grid-column:span 12}}
+.hero{display:grid;grid-template-columns:auto 1fr auto;gap:22px;align-items:center;box-shadow:var(--glow)}
+@media (max-width:920px){.hero{grid-template-columns:1fr}}
+.power{width:112px;height:112px;border-radius:50%;border:none;cursor:pointer;display:grid;place-items:center;font-weight:800;font-size:15px;
+background:radial-gradient(circle at 35% 30%,#ffe29a,var(--gold) 55%,var(--gold2));color:#1b1406;box-shadow:0 0 0 6px rgba(232,184,74,.12),0 10px 30px rgba(232,184,74,.25);transition:transform .12s}
+.power:hover{transform:scale(1.03)}.power:disabled{opacity:.5;cursor:default;transform:none}
+.power.on{background:radial-gradient(circle at 35% 30%,#3a3f4f,#232838);color:var(--ink);box-shadow:0 0 0 6px rgba(47,191,113,.15),0 0 30px rgba(47,191,113,.25)}
+.power small{display:block;font-weight:600;font-size:11px;opacity:.75}
+.status .big{font-size:24px;font-weight:750;letter-spacing:-.2px}.status .sub{color:var(--mute);margin-top:2px}
+.seg{display:inline-flex;background:var(--panel2);border:1px solid var(--line);border-radius:11px;padding:3px;margin:12px 8px 0 0}
+.seg button{border:none;background:none;padding:7px 13px;border-radius:8px;cursor:pointer;font-weight:650;color:var(--mute)}
+.seg button.on{background:var(--gold);color:#1b1406}
+.money{text-align:right}.money .l{color:var(--mute);font-size:12px}.money .n{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums}
+.money .d{font-weight:700;font-variant-numeric:tabular-nums}
+@media (max-width:920px){.money{text-align:left}}
+.steps{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}@media (max-width:920px){.steps{grid-template-columns:1fr 1fr}}
+.step{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:10px 12px;display:flex;gap:10px;align-items:center}
+.step .ic{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:13px;font-weight:800;background:var(--line);color:var(--mute);flex:none}
+.step.done .ic{background:rgba(47,191,113,.18);color:var(--ok)}.step.fail .ic{background:rgba(239,83,80,.18);color:var(--bad)}
+.step b{display:block;font-size:13px}.step span{font-size:12px;color:var(--mute)}
+.btn{border:1px solid var(--line);background:var(--panel2);padding:8px 14px;border-radius:10px;cursor:pointer;font-weight:650}
+.btn:hover{border-color:var(--gold)}.btn.gold{background:var(--gold);color:#1b1406;border-color:var(--gold)}.btn.danger{color:var(--bad);border-color:rgba(239,83,80,.45)}
+.btn:disabled{opacity:.45;cursor:default}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.kv{display:grid;grid-template-columns:1fr 1fr;gap:6px 14px}.kv div{display:flex;justify-content:space-between;border-bottom:1px solid var(--line);padding:6px 0}
+.kv span{color:var(--mute)}.kv b{font-variant-numeric:tabular-nums}
+.tw{overflow-x:auto}table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th,td{padding:8px 6px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}th:first-child,td:first-child{text-align:left}
+th{color:var(--mute);font-weight:650;font-size:12px}.pos{color:var(--ok)}.neg{color:var(--bad)}.muted{color:var(--mute)}
+.chart{height:120px;width:100%}.chart path.l{fill:none;stroke:var(--gold);stroke-width:2}.chart path.a{fill:url(#g);stroke:none}
+.chart .zero{stroke:var(--line);stroke-dasharray:3 4}
+pre{margin:0;max-height:240px;overflow:auto;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px;font:12px/1.5 Consolas,ui-monospace,monospace;white-space:pre-wrap}
+label{display:block;font-size:12px;color:var(--mute);margin-bottom:4px}input[type=number],input[type=password],input[type=text]{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:var(--panel2)}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+details summary{cursor:pointer;font-weight:700;color:var(--mute);list-style:none}details summary::before{content:"▸ "}details[open] summary::before{content:"▾ "}
 .note{font-size:12px;color:var(--mute);margin-top:8px}
+.outlook{display:grid;grid-template-columns:1fr 2fr;gap:16px}@media (max-width:920px){.outlook{grid-template-columns:1fr}}
+.ol-model,.ol-news{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:14px}
+.ol-big{font-size:26px;font-weight:800;margin:4px 0}.gauge{height:8px;border-radius:99px;background:linear-gradient(90deg,var(--bad),var(--line) 50%,var(--ok));position:relative}
+.gauge div{position:absolute;top:-4px;width:4px;height:16px;border-radius:2px;background:var(--ink);left:50%;transition:left .4s}
+.nwsum{margin:2px 0 8px}.grid2l{display:grid;grid-template-columns:1fr 1fr;gap:10px}.grid2l ul{margin:0;padding-left:18px;color:var(--mute);font-size:13px}
+.tag{font-size:11px;font-weight:800;padding:3px 9px;border-radius:99px;background:var(--line)}.tag.normal{background:rgba(47,191,113,.18);color:var(--ok)}
+.tag.caution{background:rgba(240,164,58,.18);color:var(--warn)}.tag.avoid{background:rgba(239,83,80,.18);color:var(--bad)}
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(20px);background:var(--gold);color:#1b1406;padding:11px 18px;border-radius:12px;font-weight:700;opacity:0;transition:.2s;max-width:92vw;z-index:9}
+.toast.show{opacity:1;transform:translateX(-50%)}
 </style>
 </head>
 <body>
-<header><div class="logo">Au</div><div><h1>XAU Scalper</h1><div class="v" id="ver"></div></div><span class="pill" id="pill">…</span></header>
+<div class="top"><div class="logo">Au</div><div><h1>XAU Scalper</h1><div class="v" id="ver"></div></div>
+  <div class="pill" id="pill"><span class="dot"></span><span id="pillTxt">…</span></div></div>
 <main>
-  <section class="card span12">
-    <div class="hero">
-      <div><div class="big" id="headline">Loading…</div><div class="sub" id="subline"></div></div>
-      <div class="btns">
-        <button class="gold" id="bStart" onclick="act('start',{mode:'demo'})">▶ Start trading</button>
-        <button id="bWatch" onclick="act('start',{mode:'watch'})">Watch only</button>
-        <button id="bStop" onclick="act('stop')">■ Stop</button>
-        <button class="danger" id="bKill" onclick="if(confirm('Close ALL bot trades now and halt the bot?'))act('kill')">Close all &amp; halt</button>
-      </div>
+  <section class="card s12 hero">
+    <button class="power" id="power" onclick="togglePower()">START<small>demo trading</small></button>
+    <div class="status">
+      <div class="big" id="headline">Loading…</div><div class="sub" id="subline"></div>
+      <div class="seg" id="modeSeg"><button data-v="demo" onclick="setMode('demo')">Demo trading</button><button data-v="watch" onclick="setMode('watch')">Watch only</button></div>
+      <div class="seg" id="styleSeg"><button data-v="active" onclick="act('style',{style:'active'})">⚡ Active</button><button data-v="careful" onclick="act('style',{style:'careful'})">🛡 Careful</button></div>
     </div>
-    <div class="note" id="hint"></div>
+    <div class="money"><div class="l">Equity</div><div class="n" id="equity">–</div>
+      <div class="l" style="margin-top:6px">Today</div><div class="d" id="today">–</div></div>
   </section>
 
-  <section class="card span4"><h2>Account</h2>
-    <div class="kpis">
-      <div class="kpi"><div class="l">Equity</div><div class="n" id="equity">–</div></div>
-      <div class="kpi"><div class="l">Balance</div><div class="n" id="balance">–</div></div>
-      <div class="kpi"><div class="l">Gold (bid)</div><div class="n" id="price">–</div></div>
-      <div class="kpi"><div class="l">Spread</div><div class="n" id="spread">–</div></div>
-    </div><div class="note" id="acct"></div></section>
+  <section class="card s12"><h2>Setup</h2><div class="steps" id="steps"></div>
+    <div class="row" style="margin-top:12px"><button class="btn" onclick="act('check')">Check MT5</button>
+      <button class="btn gold" onclick="if(confirm('Open and close a 0.01-lot BUY on your DEMO account to test the order path?'))act('test_trade')">Place test trade</button>
+      <button class="btn danger" onclick="if(confirm('Close ALL bot trades now and halt the bot?'))act('kill')">Close all &amp; halt</button>
+      <button class="btn" onclick="act('reset')">Reset safety stops</button></div></section>
 
-  <section class="card span4"><h2>Today</h2>
-    <div class="kpis">
-      <div class="kpi"><div class="l">P&amp;L</div><div class="n" id="tpnl">–</div></div>
-      <div class="kpi"><div class="l">Closed trades</div><div class="n" id="ttr">–</div></div>
-      <div class="kpi"><div class="l">Win rate</div><div class="n" id="twr">–</div></div>
-      <div class="kpi"><div class="l">Entries</div><div class="n" id="topen">–</div></div>
-    </div><div class="note" id="safety"></div></section>
+  <section class="card s12"><h2>Market outlook — next 60 minutes</h2>
+    <div class="outlook">
+      <div class="ol-model"><div class="muted" style="font-size:12px">15-minute chart model</div>
+        <div class="ol-big" id="olDir">–</div><div class="gauge"><div id="olBar"></div></div><div class="note" id="olNote">Appears after the first closed 15-minute bar.</div></div>
+      <div class="ol-news"><div class="row" style="justify-content:space-between"><div class="muted" style="font-size:12px">AI news analyst (Claude · live web search)</div><span class="tag" id="nwCond"></span></div>
+        <div class="ol-big" id="nwBias">–</div><div id="nwSum" class="nwsum">Add an Anthropic API key under “Alerts &amp; AI” to let Claude read the latest gold news every 15 minutes.</div>
+        <div class="grid2l"><ul id="nwDrv"></ul><ul id="nwRisk"></ul></div><div class="note" id="nwTrack"></div></div>
+    </div></section>
 
-  <section class="card span4"><h2>Last signal</h2>
-    <table><tbody id="last"><tr><td class="muted">Waiting for the first closed minute…</td></tr></tbody></table></section>
+  <section class="card s7"><h2>Profit &amp; loss — closed trades</h2>
+    <svg class="chart" id="chart" viewBox="0 0 600 120" preserveAspectRatio="none"><defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="var(--gold)" stop-opacity=".35"/><stop offset="1" stop-color="var(--gold)" stop-opacity="0"/></linearGradient></defs></svg>
+    <div class="note" id="chartNote">No closed trades yet.</div></section>
 
-  <section class="card span8"><h2>Open trades</h2>
-    <div class="tablewrap"><table><thead><tr><th>Ticket</th><th>Side</th><th>Lots</th><th>Open</th><th>SL</th><th>TP</th><th>Profit</th></tr></thead>
-    <tbody id="positions"><tr><td colspan="7" class="muted">No open trades.</td></tr></tbody></table></div></section>
+  <section class="card s5"><h2>Market &amp; last signal</h2><div class="kv" id="sig"></div></section>
 
-  <section class="card span4"><h2>AI model</h2><div id="model" class="muted">–</div>
-    <div class="row" style="margin-top:12px"><button class="small" onclick="act('retrain')">Retrain now</button>
-    <button class="small" onclick="act('open',{what:'report'})">Open report</button></div></section>
+  <section class="card s12"><h2>Open trades</h2><div class="tw"><table><thead><tr><th>Ticket</th><th>Side</th><th>Lots</th><th>Open</th><th>SL</th><th>TP</th><th>Profit</th></tr></thead><tbody id="positions"></tbody></table></div></section>
 
-  <section class="card span12" id="jobCard" style="display:none"><h2 id="jobTitle">Activity</h2><pre id="job"></pre></section>
+  <section class="card s12"><h2>Recent trades</h2><div class="tw"><table><thead><tr><th>Opened (UTC)</th><th>Side</th><th>Lots</th><th>Entry</th><th>Exit</th><th>Reason</th><th>AI</th><th>P&amp;L</th></tr></thead><tbody id="trades"></tbody></table></div></section>
 
-  <section class="card span6"><h2>Settings</h2>
-    <div class="grid2">
+  <section class="card s12" id="jobCard" style="display:none"><h2 id="jobTitle">Activity</h2><pre id="job"></pre></section>
+
+  <section class="card s6"><details><summary>Settings</summary>
+    <div class="grid3" style="margin-top:12px">
       <div><label>Take profit at +% of equity</label><input id="s_equity_tp_pct" type="number" step="0.1" min="0"></div>
       <div><label>Risk per trade %</label><input id="s_risk_per_trade_pct" type="number" step="0.1" min="0.1"></div>
-      <div><label>Small account: max risk % for 0.01 lot</label><input id="s_min_lot_max_risk_pct" type="number" step="1" min="0"></div>
+      <div><label>Small account: max risk % (0.01 lot)</label><input id="s_min_lot_max_risk_pct" type="number" step="1" min="0"></div>
       <div><label>Daily loss limit %</label><input id="s_daily_loss_limit_pct" type="number" step="1" min="1"></div>
       <div><label>Max trades per day</label><input id="s_max_daily_trades" type="number" step="1" min="1"></div>
-      <div><label>Trade the Asia session</label><input id="s_asia_enabled" type="checkbox" style="width:auto"></div>
-      <div><label>Skip market open check (24/7 trading)</label><input id="s_skip_market_open_check" type="checkbox" style="width:auto"></div>
+      <div><label><input id="s_asia_enabled" type="checkbox"> Trade the Asia session</label></div>
     </div>
-    <div class="row" style="margin-top:12px"><button class="small primary" onclick="saveSettings()">Save settings</button>
-    <span class="note">The +% exit is skipped while the AI expects the move to continue.</span></div></section>
+    <div class="row" style="margin-top:12px"><button class="btn gold" onclick="saveSettings()">Save</button>
+      <span class="note">The +% exit is skipped while the AI expects the move to continue. Saving restarts a running bot.</span></div></details></section>
 
-  <section class="card span6"><h2>Alerts &amp; login</h2>
-    <label>Telegram bot token (from @BotFather)</label>
-    <div class="row"><input id="tgToken" type="password" placeholder="123456:ABC…" style="flex:1"><button class="small" onclick="act('telegram',{token:val('tgToken')})">Connect</button></div>
+  <section class="card s6"><details><summary>Alerts, AI &amp; MT5 login</summary>
+    <div style="margin-top:12px"><label>Anthropic API key — enables the AI news analyst (Claude Opus 5.5 with live web search)</label>
+    <div class="row"><input id="akey" type="password" placeholder="sk-ant-…" style="flex:1"><button class="btn" onclick="act('anthropic',{key:val('akey')})">Save</button></div>
+    <div class="note" id="akState">Optional. Roughly one short analysis every 15 min while gold trades — billed to your Anthropic account.</div>
+    <label style="margin-top:12px">Telegram bot token (from @BotFather)</label>
+    <div class="row"><input id="tgToken" type="password" placeholder="123456:ABC…" style="flex:1"><button class="btn" onclick="act('telegram',{token:val('tgToken')})">Connect</button></div>
     <div class="note" id="tgState"></div>
-    <details style="margin-top:14px"><summary>MT5 auto-login (optional)</summary>
-      <div class="note">Not needed if you ticked “Save password” when logging in to MT5. Stored only on this PC.</div>
-      <div class="grid2" style="margin-top:8px">
-        <div><label>Login</label><input id="mLogin" inputmode="numeric"></div>
-        <div><label>Password</label><input id="mPass" type="password"></div>
-        <div><label>Server</label><input id="mServer" placeholder="PUPrime-Demo"></div>
-      </div>
-      <button class="small" style="margin-top:10px" onclick="act('mt5',{login:val('mLogin'),password:val('mPass'),server:val('mServer')})">Save login</button>
-    </details></section>
+    <div class="note">MT5 auto-login is optional if “Save password” is ticked in MT5. Stored only on this PC.</div>
+    <div class="grid3" style="margin-top:8px"><div><label>Login</label><input id="mLogin" type="text" inputmode="numeric"></div>
+      <div><label>Password</label><input id="mPass" type="password"></div><div><label>Server</label><input id="mServer" type="text" placeholder="PUPrime-Demo"></div></div>
+    <button class="btn" style="margin-top:10px" onclick="act('mt5',{login:val('mLogin'),password:val('mPass'),server:val('mServer')})">Save login</button></div></details></section>
 
-  <section class="card span12"><div class="row">
-    <button class="small" onclick="act('check')">Check MT5 connection</button>
-    <button class="small" onclick="act('reset')">Reset safety stops</button>
-    <button class="small" onclick="act('open',{what:'logs'})">Open logs</button>
-    <button class="small" onclick="act('open',{what:'folder'})">Open bot folder</button>
-    <button class="small" onclick="act('open',{what:'config'})">Advanced config</button>
-    <button class="small" style="margin-left:auto" onclick="act('quit')">Close dashboard</button></div>
-    <div class="note">Closing this page or the dashboard does not stop the bot. It keeps trading in the background and restarts after every Windows logon until you press Stop.</div></section>
+  <section class="card s12"><div class="row">
+    <button class="btn" onclick="act('retrain')">Retrain AI now</button><button class="btn" onclick="act('open',{what:'report'})">Backtest report</button>
+    <button class="btn" onclick="act('open',{what:'logs'})">Logs</button><button class="btn" onclick="act('open',{what:'folder'})">Bot folder</button>
+    <button class="btn" onclick="act('open',{what:'config'})">Advanced config</button><button class="btn" style="margin-left:auto" onclick="act('quit')">Close dashboard</button></div>
+    <div class="note" id="modelNote"></div>
+    <div class="note">Closing this page does not stop the bot. It keeps trading in the background and restarts after every Windows logon until you press STOP.</div></section>
 </main>
 <div class="toast" id="toast"></div>
 <script>
-const TOKEN="__TOKEN__";let S=null,settingsLoaded=false;
-const $=id=>document.getElementById(id), val=id=>$(id).value;
-function money(x,c){if(x==null)return"–";return(c==="EUR"?"€":c==="USD"?"$":"")+Number(x).toFixed(2)}
-function signed(x,c){if(x==null)return"–";const s=(x>=0?"+":"−")+money(Math.abs(x),c);return s}
-function toast(m){const t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove("show"),4200)}
-async function act(name,body){try{const r=await fetch("/api/"+name,{method:"POST",headers:{"X-Token":TOKEN,"Content-Type":"application/json"},body:JSON.stringify(body||{})});
-const j=await r.json();toast(j.msg||"Done");setTimeout(poll,400)}catch(e){toast("Dashboard not reachable")}}
-function saveSettings(){act("settings",{equity_tp_pct:+val("s_equity_tp_pct"),risk_per_trade_pct:+val("s_risk_per_trade_pct"),
-min_lot_max_risk_pct:+val("s_min_lot_max_risk_pct"),daily_loss_limit_pct:+val("s_daily_loss_limit_pct"),
-max_daily_trades:+val("s_max_daily_trades"),asia_enabled:$("s_asia_enabled").checked})}
-function cell(tr,txt,cls){const td=document.createElement("td");td.textContent=txt;if(cls)td.className=cls;tr.appendChild(td)}
-function render(s){S=s;$("ver").textContent="v"+s.version;
-const bg=s.background||{},w=s.worker||{},job=s.job||{};const cur=w.currency||"";
-let head="Stopped",sub="Press Start trading — the bot downloads data and trains itself the first time.",pill=["Stopped",""];
-if(job.running&&/setup|Retrain/i.test(job.name)){head="Setting up…";sub=job.name+" ("+Math.round(job.elapsed/60)+" min). Keep MT5 open.";pill=["Training","warn"]}
-else if(bg.background==="on"){const m=bg.mode==="demo"?"Demo trading":"Watching (no orders)";
- if(bg.worker==="running"){head="Running — "+m;sub=w.detail?("Note: "+w.detail):"Scanning every closed minute of XAUUSD.";pill=["Running",w.detail?"warn":"ok"]}
- else if(bg.worker==="retrain"||w.state==="retrain"){head="Retraining (weekend)";sub="Weekly update while gold is closed.";pill=["Training","warn"]}
- else{head="Starting — "+m;sub=(bg.detail||w.detail||"Waiting for MT5…");pill=["Starting","warn"]}}
-if(s.stop_file||w.state==="killed"){head="Halted (kill switch)";sub="Press “Reset safety stops”, then Start.";pill=["Halted","bad"]}
-$("headline").textContent=head;$("subline").textContent=sub;$("pill").textContent=pill[0];$("pill").className="pill "+pill[1];
-const on=bg.background==="on";$("bStart").disabled=on&&bg.mode==="demo"||job.running;$("bWatch").disabled=on&&bg.mode==="watch"||job.running;$("bStop").disabled=!on;
-$("hint").textContent=s.model.exists?"":"First start: about 10–30 minutes of download and training. MT5 must be open and logged in.";
+const TOKEN="__TOKEN__";let S=null,loaded=false,mode="demo";
+const $=id=>document.getElementById(id),val=id=>$(id).value;
+const cur=c=>c==="EUR"?"€":c==="USD"?"$":"";
+const money=(x,c)=>x==null?"–":cur(c)+Number(x).toFixed(2);
+const signed=(x,c)=>x==null?"–":(x>=0?"+":"−")+cur(c)+Math.abs(x).toFixed(2);
+function toast(m){const t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove("show"),4500)}
+async function act(n,b){try{const r=await fetch("/api/"+n,{method:"POST",headers:{"X-Token":TOKEN,"Content-Type":"application/json"},body:JSON.stringify(b||{})});toast((await r.json()).msg||"Done");setTimeout(poll,500)}catch(e){toast("Dashboard not reachable")}}
+function setMode(m){mode=m;const bg=(S||{}).background||{};if(bg.background==="on"&&bg.mode!==m)act("start",{mode:m});paintSeg("modeSeg",m);paintPower()}
+function togglePower(){const bg=(S||{}).background||{};if(bg.background==="on")act("stop");else act("start",{mode})}
+function saveSettings(){act("settings",{equity_tp_pct:+val("s_equity_tp_pct"),risk_per_trade_pct:+val("s_risk_per_trade_pct"),min_lot_max_risk_pct:+val("s_min_lot_max_risk_pct"),daily_loss_limit_pct:+val("s_daily_loss_limit_pct"),max_daily_trades:+val("s_max_daily_trades"),asia_enabled:$("s_asia_enabled").checked})}
+function paintSeg(id,v){document.querySelectorAll("#"+id+" button").forEach(b=>b.classList.toggle("on",b.dataset.v===v))}
+function td(tr,t,c){const e=document.createElement("td");e.textContent=t;if(c)e.className=c;tr.appendChild(e)}
+function empty(tb,n,t){tb.innerHTML="";const tr=document.createElement("tr"),e=document.createElement("td");e.colSpan=n;e.className="muted";e.textContent=t;tr.appendChild(e);tb.appendChild(tr)}
+function paintPower(){const bg=(S||{}).background||{},p=$("power"),on=bg.background==="on",busy=S&&S.job&&S.job.running&&/setup|Retrain/i.test(S.job.name);
+p.classList.toggle("on",on);p.disabled=!!busy;p.innerHTML=on?"STOP<small>"+(bg.mode==="watch"?"watching":"trading")+"</small>":"START<small>"+(mode==="watch"?"watch only":"demo trading")+"</small>"}
+function chart(pts,c){const svg=$("chart");[...svg.querySelectorAll("path,line")].forEach(e=>e.remove());if(!pts||pts.length<2){$("chartNote").textContent="No closed trades yet — the curve appears after the first trades.";return}
+const ys=pts.map(p=>p[1]).concat([0]),mn=Math.min(...ys),mx=Math.max(...ys),r=(mx-mn)||1,X=i=>i*600/(pts.length-1),Y=v=>112-(v-mn)/r*104;
+const d=pts.map((p,i)=>(i?"L":"M")+X(i).toFixed(1)+","+Y(p[1]).toFixed(1)).join("");const ns="http://www.w3.org/2000/svg";
+const z=document.createElementNS(ns,"line");z.setAttribute("x1",0);z.setAttribute("x2",600);z.setAttribute("y1",Y(0));z.setAttribute("y2",Y(0));z.setAttribute("class","zero");svg.appendChild(z);
+const a=document.createElementNS(ns,"path");a.setAttribute("d",d+"L600,120L0,120Z");a.setAttribute("class","a");svg.appendChild(a);
+const l=document.createElementNS(ns,"path");l.setAttribute("d",d);l.setAttribute("class","l");svg.appendChild(l);
+const last=pts[pts.length-1][1];$("chartNote").textContent=pts.length+" closed trades · total "+signed(last,c)}
+function render(s){S=s;$("ver").textContent="v"+s.version;const bg=s.background||{},w=s.worker||{},job=s.job||{},c=w.currency||(s.check||{}).currency||"";
 const fresh=w.heartbeat_age_s!=null&&w.heartbeat_age_s<30;
-$("equity").textContent=fresh?money(w.equity,cur):"–";$("balance").textContent=fresh?money(w.balance,cur):"–";
-$("price").textContent=fresh&&w.price?Number(w.price).toFixed(2):"–";$("spread").textContent=fresh&&w.spread!=null?"$"+Number(w.spread).toFixed(2):"–";
-$("acct").textContent=w.login?("#"+w.login+" · "+w.server):"";
-const t=w.today||{};$("tpnl").textContent=t.pnl!=null?signed(t.pnl,cur):"–";$("tpnl").className="n "+(t.pnl>0?"pos":t.pnl<0?"neg":"");
-$("ttr").textContent=t.trades!=null?t.trades:"–";$("twr").textContent=t.trades?Math.round(100*t.wins/t.trades)+"%":"–";$("topen").textContent=t.opened!=null?t.opened:"–";
-$("safety").textContent=[w.hard_stop?"Survival stop active":"",w.daily_halt?"Daily loss limit reached":"",w.drift_pause?"Paused: model drift":""].filter(Boolean).join(" · ");
-const L=w.last||{},lb=$("last");lb.innerHTML="";if(L.time){[["Bar (UTC)",L.time],["Price",L.close],["M15 trend",L.bias>0?"Up":L.bias<0?"Down":"Flat"],
-["AI P(up)",L.p_up],["AI confidence",L.conf],["Session",L.session],["News",L.news],["Decision",L.decision],["M15 EMA slope",L.m15_ema_fast_slope],["M15 ATR",L.m15_atr],["M15 momentum",L.m15_momentum],["M15 vol skew",L.m15_vol_skew]].forEach(([k,v])=>{const tr=document.createElement("tr");cell(tr,k,"muted");cell(tr,String(v));lb.appendChild(tr)})}
-else{const tr=document.createElement("tr");cell(tr,"Waiting for the first closed minute…","muted");lb.appendChild(tr)}
-const pb=$("positions");pb.innerHTML="";const P=w.positions||[];if(!P.length||!fresh){const tr=document.createElement("tr");const td=document.createElement("td");td.colSpan=7;td.className="muted";td.textContent="No open trades.";tr.appendChild(td);pb.appendChild(tr)}
-else P.forEach(p=>{const tr=document.createElement("tr");cell(tr,p.ticket);cell(tr,p.side,p.side==="BUY"?"pos":"neg");cell(tr,p.lots);cell(tr,(+p.open).toFixed(2));cell(tr,(+p.sl).toFixed(2));cell(tr,(+p.tp).toFixed(2));cell(tr,signed(p.profit,cur),p.profit>=0?"pos":"neg");pb.appendChild(tr)});
-const m=s.model;let mt=m.exists?("Trained "+(m.trained_at||"").slice(0,16).replace("T"," ")+" UTC on "+Number(m.rows).toLocaleString()+" minutes."):"Not trained yet.";
-if(s.tuned.adopted&&s.tuned.validate){const v=s.tuned.validate;mt+=" Tuned rules active — validation: "+v.n+" trades, account "+(v.growth_pct>=0?"+":"")+v.growth_pct.toFixed(1)+"%, profit factor "+v.pf.toFixed(2)+"."}
-else if(m.exists)mt+=" Using default rules (no tuned set beat the validation test).";$("model").textContent=mt;
-if(job.lines&&job.lines.length){$("jobCard").style.display="";$("jobTitle").textContent=job.name+(job.running?" — running":job.rc===0?" — done":" — finished with errors");
-const pre=$("job");const atBottom=pre.scrollTop+pre.clientHeight>=pre.scrollHeight-20;pre.textContent=job.lines.join("\n");if(atBottom)pre.scrollTop=pre.scrollHeight}
-$("tgState").textContent=s.telegram?"Telegram connected. Commands: /status /pause /resume /stop":"Optional: trade alerts on your phone.";
-if(!settingsLoaded&&s.settings){for(const[k,v]of Object.entries(s.settings)){const el=$("s_"+k);if(!el)continue;if(el.type==="checkbox")el.checked=!!v;else el.value=v}
-if(s.mt5_login){$("mLogin").value=s.mt5_login;$("mServer").value=s.mt5_server}settingsLoaded=true}}
-async function poll(){try{const r=await fetch("/api/state",{cache:"no-store"});render(await r.json())}catch(e){$("pill").textContent="Offline";$("pill").className="pill bad"}}
+if(!loaded&&bg.background==="on")mode=bg.mode||"demo";
+let head="Ready",sub="Press START — the first time it downloads data and trains (10–30 min).",pill=["Stopped",""];
+if(s.model.exists)sub="Press START to trade your demo account in the background.";
+if(job.running&&/setup|Retrain/i.test(job.name)){head="Training the AI…";sub=job.name+" · "+Math.round(job.elapsed/60)+" min · keep MT5 open";pill=["Training","warn"]}
+else if(bg.background==="on"){const m=bg.mode==="demo"?"Trading your demo":"Watching (no orders)";
+ if(bg.worker==="running"){head=m;sub=w.detail?w.detail:"Scanning every closed minute of gold.";pill=["Live",w.detail?"warn":"ok"]}
+ else if(w.state==="retrain"){head="Weekend retrain";sub="Learning from this week's data while gold is closed.";pill=["Training","warn"]}
+ else{head="Starting…";sub=bg.detail||w.detail||"Connecting to MT5…";pill=["Starting","warn"]}}
+if(s.stop_file||w.state==="killed"){head="Halted by kill switch";sub="Press “Reset safety stops”, then START.";pill=["Halted","bad"]}
+$("headline").textContent=head;$("subline").textContent=sub;$("pillTxt").textContent=pill[0];$("pill").className="pill "+pill[1];
+paintSeg("modeSeg",bg.background==="on"?bg.mode:mode);paintSeg("styleSeg",s.style);paintPower();
+const eq=fresh?w.equity:(s.check||{}).equity;$("equity").textContent=money(eq,c);
+const t=w.today||{};$("today").textContent=t.pnl!=null&&fresh?signed(t.pnl,c)+" · "+(t.trades||0)+" trades":"–";$("today").className="d "+(t.pnl>0?"pos":t.pnl<0?"neg":"");
+const ck=s.check||{},conn=(fresh&&w.login)||ck.ok,steps=[
+ [conn,conn===false&&ck.ok===false,"MT5 connected",conn?("#"+(w.login||ck.login)+" · "+(w.server||ck.server||"")):"Open MT5 and log in"],
+ [ck.algo||fresh,false,"Algo Trading on",ck.algo||fresh?"Python orders allowed":"Click Algo Trading in MT5"],
+ [s.model.exists,false,"AI trained",s.model.exists?("on "+Number(s.model.rows).toLocaleString()+" minutes"):"Happens on first START"],
+ [!!ck.test_trade_ok,false,"Test trade",ck.test_trade_ok?"Order path verified":"Optional · proves orders work"],
+ [bg.background==="on"&&bg.worker==="running",false,"Bot running",bg.background==="on"?(bg.mode==="demo"?"Demo trading":"Watch only"):"Press START"]];
+const st=$("steps");st.innerHTML="";steps.forEach(([ok,fail,b,sp],i)=>{const d=document.createElement("div");d.className="step "+(ok?"done":fail?"fail":"");
+ const ic=document.createElement("div");ic.className="ic";ic.textContent=ok?"✓":fail?"!":String(i+1);const x=document.createElement("div");const bb=document.createElement("b");bb.textContent=b;const ss=document.createElement("span");ss.textContent=sp;x.append(bb,ss);d.append(ic,x);st.appendChild(d)});
+const L=w.last||{},sg=$("sig");sg.innerHTML="";[["Gold bid",fresh&&w.price?Number(w.price).toFixed(2):"–"],["Spread",fresh&&w.spread!=null?"$"+Number(w.spread).toFixed(2):"–"],
+ ["Bar (UTC)",L.time||"–"],["M15 trend",L.bias>0?"Up ▲":L.bias<0?"Down ▼":L.time?"Flat":"–"],["AI P(up)",L.p_up??"–"],["Confidence",L.conf??"–"],["Session",L.session||"–"],["News",L.news||"–"],
+ ["Decision",L.decision||"Waiting for the first closed minute"]].forEach(([k,v])=>{const d=document.createElement("div");const a=document.createElement("span");a.textContent=k;const b=document.createElement("b");b.textContent=v;d.append(a,b);sg.appendChild(d)});
+sg.lastChild.style.gridColumn="1/-1";
+const pb=$("positions"),P=w.positions||[];if(!P.length||!fresh)empty(pb,7,"No open trades.");else{pb.innerHTML="";P.forEach(p=>{const tr=document.createElement("tr");td(tr,p.ticket);td(tr,p.side,p.side==="BUY"?"pos":"neg");td(tr,p.lots);td(tr,(+p.open).toFixed(2));td(tr,(+p.sl).toFixed(2));td(tr,(+p.tp).toFixed(2));td(tr,signed(p.profit,c),p.profit>=0?"pos":"neg");pb.appendChild(tr)})}
+const tb=$("trades"),T=s.trades||[];if(!T.length)empty(tb,8,"No trades yet.");else{tb.innerHTML="";T.forEach(r=>{const tr=document.createElement("tr");td(tr,(r.open_time||"").slice(0,16).replace("T"," "));td(tr,r.side,r.side==="BUY"?"pos":"neg");td(tr,r.lots);td(tr,r.open!=null?(+r.open).toFixed(2):"–");td(tr,r.close!=null?(+r.close).toFixed(2):"open");td(tr,r.reason||"–");td(tr,r.conf!=null?(+r.conf).toFixed(2):"–");td(tr,r.pnl!=null?signed(r.pnl,c):"–",r.pnl>0?"pos":r.pnl<0?"neg":"");tb.appendChild(tr)})}
+chart(s.curve,c);
+const O=fresh?(w.outlook||{}):{};if(O.p_up!=null){const up=O.p_up>=.5;$("olDir").textContent=(up?"▲ Up ":"▼ Down ")+Math.round(100*(up?O.p_up:1-O.p_up))+"%";
+ $("olDir").className="ol-big "+(up?"pos":"neg");$("olBar").style.left=(100*O.p_up).toFixed(0)+"%";$("olNote").textContent="Bar "+O.bar.slice(11,16)+" UTC · vetoes trades it strongly disagrees with"+(O.valid_auc?" · model AUC "+(+O.valid_auc).toFixed(3):"")}
+const N=fresh?(w.news||{}):{};if(N.bias){$("nwBias").textContent=(N.bias==="up"?"▲ Up":N.bias==="down"?"▼ Down":"◆ Neutral")+" · "+Math.round(100*N.confidence)+"%";$("nwBias").className="ol-big "+(N.bias==="up"?"pos":N.bias==="down"?"neg":"");
+ $("nwSum").textContent=N.summary||"";$("nwCond").textContent=(N.trade_conditions||"").toUpperCase();$("nwCond").className="tag "+(N.trade_conditions||"");
+ const fill=(id,arr,pre)=>{const u=$(id);u.innerHTML="";(arr||[]).slice(0,4).forEach(t=>{const li=document.createElement("li");li.textContent=pre+t;u.appendChild(li)})};fill("nwDrv",N.drivers,"");fill("nwRisk",N.risks,"⚠ ");
+ const T=N.track||{};$("nwTrack").textContent="Updated "+(N.time||"").slice(11,16)+" UTC"+(T.graded?" · track record "+Math.round(100*T.hit_rate)+"% right over "+T.graded+" graded calls":" · its calls are graded after 60 min and fed back to it")}
+else if(s.news_key){$("nwBias").textContent="…";$("nwSum").textContent=bg.background==="on"?"Analysing the latest news — first read within ~15 minutes.":"Starts reading the news when the bot runs.";}
+$("akState").textContent=s.news_key?"AI news analyst enabled ✓ (key stored only on this PC)":"Optional. Roughly one short analysis every 15 min while gold trades — billed to your Anthropic account.";
+if(job.lines&&job.lines.length){$("jobCard").style.display="";$("jobTitle").textContent=job.name+(job.running?" — running":job.rc===0?" — done ✓":" — finished with errors");const pre=$("job"),bt=pre.scrollTop+pre.clientHeight>=pre.scrollHeight-20;pre.textContent=job.lines.join("\n");if(bt)pre.scrollTop=pre.scrollHeight}
+const m=s.model;let mt=m.exists?("AI trained "+(m.trained_at||"").slice(0,16).replace("T"," ")+" UTC."):"AI not trained yet.";
+if(s.tuned.adopted&&s.tuned.validate){const v=s.tuned.validate;mt+=" Tuned rules active (validation "+v.n+" trades, account "+(v.growth_pct>=0?"+":"")+v.growth_pct.toFixed(1)+"%)."}
+else if(m.exists)mt+=" Default rules (no tuned set passed validation).";$("modelNote").textContent=mt;
+$("tgState").textContent=s.telegram?"Telegram connected · /status /pause /resume /stop":"Optional: trade alerts on your phone.";
+if(!loaded&&s.settings){for(const[k,v]of Object.entries(s.settings)){const el=$("s_"+k);if(!el)continue;if(el.type==="checkbox")el.checked=!!v;else el.value=v}if(s.mt5_login){$("mLogin").value=s.mt5_login;$("mServer").value=s.mt5_server}}
+loaded=true}
+async function poll(){try{const r=await fetch("/api/state",{cache:"no-store"});render(await r.json())}catch(e){$("pillTxt").textContent="Offline";$("pill").className="pill bad"}}
 poll();setInterval(poll,2000);
 </script>
 </body>

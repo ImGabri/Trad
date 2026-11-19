@@ -28,6 +28,26 @@ tab: the bot keeps running, stops Windows from going to sleep while it trades, a
 | News | Verified 2019–2026 US calendar (NFP, CPI, PPI, FOMC, retail sales, GDP, PCE, JOLTS, ISM) plus a live ForexFactory feed. No entries 15→5 min before an event (stops tightened). One AI "news scalp" in the ±5 min window. Wider stops for 15 min after. |
 | Risk | 0.5 % per trade. Small-account mode trades 0.01 lot when that risks ≤ 10 % (a €50 start). 15 % daily loss halt, max 2 open / 20 trades a day, spread and slippage filters, survival hard stop, no averaging down, demo accounts only. |
 
+## Market analyst — "what happens next?"
+
+* **15-minute chart model:** it reads the 15-minute chart (trend, momentum, volatility, where price sits in the
+  day's range), the hourly trend, silver, the dollar, Nasdaq and the news calendar, and predicts the next 60 minutes.
+  It is trained walk-forward and retrains every weekend. It vetoes trades it strongly disagrees with.
+  Honest out-of-sample result on 2020–2026: AUC 0.521. When it is at least 55 % sure, it calls the next hour right
+  55.9 % of the time.
+* **AI news analyst (optional):** add an Anthropic API key in the dashboard. Every 15 minutes while gold trades,
+  Claude (Opus 5.5) searches the latest gold news and reads the chart summary and the upcoming US releases. It
+  returns a bias, a confidence, and trade conditions (normal / caution / avoid). "Avoid" pauses new entries, and a
+  confident opposite call vetoes a trade. Each call is graded 60 minutes later and its track record is fed back to it.
+  API usage is billed to your Anthropic account.
+
+## Proving real demo trades
+
+* **Place test trade** (dashboard → Setup) opens a 0.01-lot BUY on your demo with a broker-side SL/TP, checks it,
+  and closes it after 5 seconds. It reports fill price, speed and P&L.
+* **⚡ Active** style (default) trades every rule setup the AI agrees with (a few trades a day). **🛡 Careful** only
+  takes high-confidence setups. If MT5 rejects a filling mode, orders retry with another one automatically.
+
 ## How it learns from itself
 
 * **Keeps all data:** your broker's bars, every tick spread, every AI prediction and every trade with its entry

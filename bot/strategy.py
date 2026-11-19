@@ -165,7 +165,26 @@ def compute_signals(f: pd.DataFrame, cfg, events: pd.DatetimeIndex | None = None
     return out
 
 
-def decide_entry(cfg, *, rule: int, ai_dir: int, conf: float, has_ai: bool, session: str, blocked: bool,
+def decide_entry(cfg, *, outlook_dir: int = 0, outlook_conf: float = 0.0, news: dict | None = None, **kw):
+    """Rules + M1 AI decide; the market analyst (15-min outlook + optional news agent) can veto."""
+    side, slm, tpm, kind, why = _decide_entry(cfg, **kw)
+    an = getattr(cfg, "analyst", None)
+    if side == 0 or an is None or not getattr(an, "enabled", True):
+        return side, slm, tpm, kind, why
+    veto = float(getattr(an, "veto_conf", 0) or 0)
+    if veto and outlook_dir == -side and outlook_conf >= veto:
+        return 0, 0, 0, "", f"15-min outlook disagrees ({outlook_conf:.2f})"
+    if news:
+        if news.get("trade_conditions") == "avoid":
+            return 0, 0, 0, "", "news agent: avoid trading now"
+        nv = float(getattr(an, "news_veto_conf", 0.65) or 0)
+        nd = {"up": 1, "down": -1}.get(news.get("bias"), 0)
+        if nv and nd == -side and float(news.get("confidence", 0)) >= nv:
+            return 0, 0, 0, "", f"news agent expects {news.get('bias')} ({news.get('confidence'):.2f})"
+    return side, slm, tpm, kind, why
+
+
+def _decide_entry(cfg, *, rule: int, ai_dir: int, conf: float, has_ai: bool, session: str, blocked: bool,
                  phase: str, event_id: int, news_used: set, spread_ratio: float, atr_m5: float,
                  slippage_usd: float, bias: int = 0, ai_only_min_conf: float | None = None) -> tuple[int, float, float, str, str]:
     """Single source of truth for entry gating (backtest + live).

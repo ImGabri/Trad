@@ -23,6 +23,7 @@ class Fake:
         self.cur = start_bar  # index of the bar currently forming
         self.positions, self.deals, self.orders = {}, [], []
         self.balance, self.next_ticket = 10_000.0, 1000
+        self.reject_fillings = set()  # simulate brokers that refuse some filling modes (retcode 10030)
         t = (m1.index.view("int64") // 10**9) + OFFSET if hasattr(m1.index, "view") else None
         self.t = ((m1.index - m1.index[0]).total_seconds().astype("int64") + int(m1.index[0].timestamp()) + OFFSET).to_numpy()
 
@@ -89,7 +90,9 @@ class Fake:
         return [d for d in self.deals if d.position_id == position]
 
     def order_send(self, req):
-        self.orders.append(req)
+        self.orders.append(dict(req))
+        if req["action"] == TRADE_ACTION_DEAL and req.get("type_filling") in self.reject_fillings:
+            return NS(retcode=10030, comment="Unsupported filling mode", order=0, price=0, volume=0)
         if req["action"] == TRADE_ACTION_SLTP:
             p = self.positions[req["position"]]
             p.sl = req["sl"]

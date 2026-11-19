@@ -43,7 +43,7 @@ class Pos:
 
 def run_backtest(f: pd.DataFrame, sig: pd.DataFrame, cfg, ai_dir: pd.Series | None = None,
                  ai_conf: pd.Series | None = None, entry_signal: pd.Series | None = None,
-                 label: str = "strategy") -> dict:
+                 label: str = "strategy", outlook: pd.DataFrame | None = None) -> dict:
     """f: features (features.build_features), sig: strategy.compute_signals.
     ai_dir/ai_conf: model direction (+1/-1) and confidence per bar; None = rules only (confidence 1.0).
     entry_signal: optional override of sig['rule_signal'] (used for baselines)."""
@@ -65,6 +65,11 @@ def run_backtest(f: pd.DataFrame, sig: pd.DataFrame, cfg, ai_dir: pd.Series | No
     must_flat = sig["must_flat"].to_numpy(bool)
     phase = sig["news_phase"].to_numpy()
     ev_id = sig["event_id"].to_numpy(int)
+    if outlook is not None:
+        ol = outlook.reindex(idx)
+        o_dir, o_conf = ol["outlook_dir"].fillna(0).to_numpy(int), ol["outlook_conf"].fillna(0).to_numpy(float)
+    else:
+        o_dir, o_conf = np.zeros(n, int), np.zeros(n)
     days = idx.floor("D")
     gap_next = np.r_[(np.diff(idx.values) / np.timedelta64(1, "m")), np.inf]
 
@@ -239,7 +244,7 @@ def run_backtest(f: pd.DataFrame, sig: pd.DataFrame, cfg, ai_dir: pd.Series | No
             cfg, rule=int(rule[i]), ai_dir=int(adir[i]), conf=float(conf[i]), has_ai=has_ai,
             session=session[i], blocked=bool(blocked[i]), phase=phase[i], event_id=int(ev_id[i]),
             news_used=news_used, spread_ratio=float(spr_ratio[i]), atr_m5=float(atr5[i]), slippage_usd=slip,
-            bias=int(bias[i]), ai_only_min_conf=ai_only)
+            bias=int(bias[i]), ai_only_min_conf=ai_only, outlook_dir=int(o_dir[i]), outlook_conf=float(o_conf[i]))
         if side == 0:
             continue
         ok, _ = risk.can_open(len(positions), side,
@@ -319,8 +324,8 @@ def random_signal(f: pd.DataFrame, rate: float, seed: int = 7) -> pd.Series:
     return pd.Series(s, index=f.index)
 
 
-def run_with_baselines(f, sig, cfg, ai_dir=None, ai_conf=None) -> dict[str, dict]:
-    res = {"strategy": run_backtest(f, sig, cfg, ai_dir, ai_conf, label="strategy")}
+def run_with_baselines(f, sig, cfg, ai_dir=None, ai_conf=None, outlook=None) -> dict[str, dict]:
+    res = {"strategy": run_backtest(f, sig, cfg, ai_dir, ai_conf, label="strategy", outlook=outlook)}
     # baselines bypass the AI gate and use identical exits/costs/risk rules
     res["ema_cross"] = run_backtest(f, sig, cfg, entry_signal=ema_cross_signal(f), label="ema_cross")
     rate = max(res["strategy"]["metrics"]["n_trades"], 50) / max(len(f), 1)
