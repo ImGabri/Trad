@@ -12,7 +12,7 @@ XAUUSD Trader for PU Prime MetaTrader 5. Trad sends market buy and sell requests
 
 **[Download Trad for Windows x64](https://github.com/ImGabri/Trad/releases/download/v1.0.0/Trad-Windows-x64.zip)** · [Releases and checksums](https://github.com/ImGabri/Trad/releases)
 
-**[v1.1.0 release notes](RELEASE_NOTES-1.1.0.md)** — online learning from public real-time data; see the release notes for the v1.1.0 source release and the V2.0.2 Windows bundle.
+**[v1.1.0 release notes](RELEASE_NOTES-1.1.0.md)** — online learning from public real-time data; see the release notes for the v1.1.0 source release and the V2.0.3 Windows bundle.
 
 ## First run on Windows
 

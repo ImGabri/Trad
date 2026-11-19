@@ -30,4 +30,4 @@ Run the demo as usual (`python goldbot.py watch` or `demo`, or the Windows launc
 
 Stop any running runner, keep your `data` folder and `settings.json`, replace the application files with this release, then restart. No new dependencies.
 
-GitHub provides the complete source archive for this release. The V1 Windows ZIP can be produced on a 64-bit Python 3.13 Windows builder with `python packaging/build_windows.py`; the V2.0.2 Windows bundle and its checksum are published alongside it.
+GitHub provides the complete source archive for this release. The V1 Windows ZIP can be produced on a 64-bit Python 3.13 Windows builder with `python packaging/build_windows.py`; the V2.0.3 Windows bundle and its checksum are published alongside it.

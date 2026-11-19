@@ -1,4 +1,4 @@
-# TradV2 Scalper v2.0.2 — numeric-history hotfix
+# TradV2 Scalper v2.0.3 — numeric-history hotfix
 
 ## Fixed
 
@@ -17,7 +17,7 @@ Broker M1 bars and public OANDA monthly files can produce object-dtype columns c
 - `bot/features.py`: normalize the same columns once at feature-builder entry, protecting every indicator; make `obv()` defensive for direct callers.
 - `bot/backtest.py`, `bot/learning.py`, `bot/strategy.py`, `bot/features.py`: replace deprecated pandas `dayofweek` accessors.
 - `bot/tests/test_numeric_bars.py`: four offline regression tests covering OBV, full feature generation, monthly-history validation and broker-price conversion.
-- `bot/VERSION`: `2.0.2`.
+- `bot/VERSION`: `2.0.3`.
 
 ## Verification
 

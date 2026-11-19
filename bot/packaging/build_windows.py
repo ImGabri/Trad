@@ -18,7 +18,7 @@ BOT = Path(__file__).resolve().parents[1]
 PY = "3.12.10"
 ASSET = "TradV2-XAUUSD-Scalper-Windows-x64.zip"
 TOP_FILES = ["START.cmd", "MENU.cmd", "VERSION", "config.yaml", "requirements.txt", ".env.example", "README.md",
-             "ARCHITECTURE.md", "RELEASE_NOTES-2.0.2.md"]
+             "ARCHITECTURE.md", "RELEASE_NOTES-2.0.3.md"]
 
 
 def app_files() -> list[str]:
