@@ -33,6 +33,7 @@ USER_KEYS = {  # settings the dashboard may change (written to data/user.yaml, w
     "daily_loss_limit_pct": ("risk", float, 1, 100),
     "max_daily_trades": ("risk", int, 1, 500),
     "asia_enabled": ("sessions", bool, None, None),
+    "skip_market_open_check": ("strategy", bool, None, None),
 }
 
 
@@ -62,7 +63,7 @@ class Job:
         env = dict(os.environ, PYTHONUTF8="1", PYTHONUNBUFFERED="1")
         flags = 0x08000000 if os.name == "nt" else 0  # CREATE_NO_WINDOW
         try:
-            p = subprocess.Popen([str(exe), str(APP / "main.py"), *args], cwd=APP, env=env, stdout=subprocess.PIPE,
+            p = subprocess.Popen([str(exe), "-X", "utf8", "-u", str(APP / "main.py"), *args], cwd=APP, env=env, stdout=subprocess.PIPE,
                                  stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, text=True, encoding="utf-8",
                                  errors="replace", creationflags=flags)
             for line in p.stdout:
@@ -73,16 +74,42 @@ class Job:
         except Exception as e:  # noqa: BLE001
             self.lines.append(f"Error: {e}")
             self.rc = -1
-        self.running = False
         if self.after:
             try:
                 self.after(self.rc)
             except Exception as e:  # noqa: BLE001
+                self.rc = -1
                 self.lines.append(f"Error: {e}")
+        self.running = False
 
     def state(self) -> dict:
         return dict(name=self.name, running=self.running, rc=self.rc, lines=list(self.lines)[-200:],
-                    elapsed=round(time.time() - self.started) if self.started else 0)
+                    elapsed=round(time.time() - self.started) if self.started else 0,
+                    #Live state fields (populated by main.py via /api/state updates):
+                    ai_conf=None, ai_dir=None, rule_signal=None, session=None,
+                    spread_ratio=None, atr_m5=None, entry_blocked=False)
+
+def _json_serialize(d):
+    """Recursively convert objects (datetime, np.int64, etc.) to JSON-serializable types."""
+    if isinstance(d, dict):
+        return {k: _json_serialize(v) for k, v in d.items()}
+    if isinstance(d, (list, tuple)):
+        return [_json_serialize(v) for v in d]
+    if d is None or isinstance(d, (bool, int, float, str)):
+        return d
+    # datetime
+    if hasattr(d, 'isoformat'):
+        try:
+            return d.isoformat()
+        except Exception:
+            return str(d)
+    # numpy types
+    if hasattr(d, 'item'):
+        try:
+            return d.item()
+        except Exception:
+            pass
+    return str(d)
 
 
 JOB = Job()
@@ -145,7 +172,8 @@ def state() -> dict:
 # -------------------------------------------------------------------------------- actions
 def _start_bot(mode: str) -> str:
     import background
-    (DATA / "STOP").unlink(missing_ok=True)
+    if (DATA / "STOP").exists():
+        return "Kill switch active. Review it before using Reset safety stops."
     if not (DATA / "model" / "model.txt").exists():
         ok = JOB.start("First-time setup: downloading history, training the AI, tuning the rules",
                        ["prepare"], after=lambda rc: rc == 0 and background.start(APP, mode))
@@ -249,8 +277,15 @@ def action(name: str, body: dict) -> str:
 
 # --------------------------------------------------------------------------------- server
 class Handler(BaseHTTPRequestHandler):
-    token = ""
+    token = secrets.token_urlsafe(24)
     last_seen = time.time()
+    live_state: dict = dict(ai_conf=None, ai_dir=None, rule_signal=None, session=None,
+                              spread_ratio=None, atr_m5=None, entry_blocked=False,
+                              # 15min AI interpretation features
+                              m15_ema_fast_slope=None, m15_ema_slow_slope=None,
+                              m15_atr=None, m15_momentum=None, m15_vol_skew=None,
+                              vwap_dev_pct_15=None, vwma_15=None,
+                              ret_15m=None, ret_45m=None, m15_range=None, m15_body=None, m15_adx=None)
 
     def log_message(self, *a):  # silence default stderr logging (pythonw has no console)
         pass
@@ -275,7 +310,15 @@ class Handler(BaseHTTPRequestHandler):
             html = (APP / "assets" / "dashboard.html").read_text(encoding="utf-8").replace("__TOKEN__", self.token)
             return self._send(200, html.encode(), "text/html")
         if self.path == "/api/state":
-            return self._send(200, json.dumps(state(), default=str).encode())
+            # Merge dashboard-managed state with live state from main.py (shared JSON file)
+            base = state()
+            try:
+                shared = json.loads((APP / "data" / "state_live.json").read_text(encoding="utf-8"))
+                base.update(shared)
+            except Exception:
+                pass
+            base.update(Handler.live_state)
+            return self._send(200, json.dumps(_json_serialize(base), default=str).encode())
         if self.path == "/api/ping":
             return self._send(200, b'{"app":"xau-scalper"}')
         if self.path == "/favicon.ico" and (APP / "assets" / "icon.ico").exists():

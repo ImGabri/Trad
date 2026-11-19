@@ -35,7 +35,13 @@ pause
 exit /b 1
 :deps
 ".venv\Scripts\python.exe" -c "import MetaTrader5, pandas, lightgbm, yaml, matplotlib, sklearn, pyarrow" 2>nul
-if errorlevel 1 ".venv\Scripts\python.exe" -m pip install -r requirements.txt
+if not errorlevel 1 goto dashboard
+".venv\Scripts\python.exe" -m pip install -r requirements.txt
+if errorlevel 1 (
+    pause
+    exit /b 1
+)
+:dashboard
 start "" ".venv\Scripts\pythonw.exe" "%~dp0main.py" ui
 exit /b 0
 

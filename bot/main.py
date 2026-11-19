@@ -124,7 +124,8 @@ def run_live(cfg, mode: str, keep_running=lambda: True, auto_retrain: bool = Fal
     from live import Runner
     if not (DATA / "model" / "model.txt").exists():
         raise SystemExit("No AI model yet — run option 2 (prepare) first.")
-    (DATA / "STOP").unlink(missing_ok=True)
+    if (DATA / "STOP").exists():
+        raise SystemExit("Kill switch active. Review it before using Reset safety stops.")
     return Runner(cfg, APP, mode, keep_running, auto_retrain).run()
 
 
@@ -353,7 +354,22 @@ def cli():
     if a.cmd == "doctor":
         return doctor(cfg)
     if a.cmd == "prepare":
-        return prepare(cfg, a.years, not a.no_dukascopy, a.trials)
+        result = prepare(cfg, a.years, not a.no_dukascopy, a.trials)
+        # Write live state for UI dashboard
+        try:
+            import json as _json
+            state_data = dict(ai_conf=None, ai_dir=None, rule_signal=None,
+                              session=None, spread_ratio=None, atr_m5=None,
+                              entry_blocked=False, status="complete",
+                              # 15min AI interpretation features
+                              m15_ema_fast_slope=None, m15_ema_slow_slope=None,
+                              m15_atr=None, m15_momentum=None, m15_vol_skew=None,
+                              vwap_dev_pct_15=None, vwma_15=None,
+                              ret_15m=None, ret_45m=None, m15_range=None, m15_body=None, m15_adx=None)
+            (APP / "data" / "state_live.json").write_text(_json.dumps(state_data, indent=2))
+        except Exception:
+            pass
+        return result
     if a.cmd == "import-csv":
         return import_csv(cfg, a.path, a.utc_offset)
     if a.cmd in ("watch", "demo"):

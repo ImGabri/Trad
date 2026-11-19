@@ -55,6 +55,7 @@ strategy:
   fib_swing_bars_m5: 48      # swing range for fib levels (4h of M5)
   m1_trigger_bars: 3         # consecutive M1 candles in bias direction
   require_rising_volume: true
+  vol_confirm_mult: 1.2      # vol filter: require above-median vol when above mult×median
   atr_period: 14
   tp_atr: 1.5
   sl_atr: 1.0
@@ -71,6 +72,10 @@ strategy:
   # Fast mode: when > 0, the AI alone may open a trade (no rule setup needed) at this confidence or higher,
   # never against the M15 bias. 0 = off.
   ai_only_min_conf: 0.0
+
+  # === Continuous Trading Options ===
+  skip_market_open_check: false  # When true, bot trades uninterrupted skipping market open/close checks
+                           # Useful for 24/7 AI interpretation based on Austria timezone
 
 risk:
   # Small-account mode (€50 start): 0.01 lot = 1 oz, so a ~$4 stop risks ~7 % of €50. The 0.5 % rule would

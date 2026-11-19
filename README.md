@@ -1,8 +1,16 @@
 # Trad
 
+**[Download the Windows demo scalper (V2)](https://github.com/ImGabri/Trad/releases/download/scalper-v2.0.2/TradV2-XAUUSD-Scalper-Windows-x64.zip)**
+
+Stop any running V1 session with Ctrl+C or disable its background task through menu 8. Keep your PU Prime demo terminal open. Extract the V2 ZIP into its own folder, open **START.cmd** and click **Start trading**. First launch trains a separate V2 model. The dashboard shows the last closed one-minute bar and its decision. See the [V2 guide](bot/README.md).
+
+## Legacy V1 tick scalper
+
+To run V1 from this source checkout, use `START.cmd legacy`. Its data and model stay in the root data folder.
+
 XAUUSD Trader for PU Prime MetaTrader 5. Trad sends market buy and sell requests on a demo account. It scores fresh bid/ask changes inside the current minute. A local machine-learning model learns from historical quotes, then separate buy and sell adjustments learn from completed demo trades.
 
-**[Download Trad for Windows x64](https://github.com/ImGabri/Trad/releases/latest/download/Trad-Windows-x64.zip)** · [Releases and checksums](https://github.com/ImGabri/Trad/releases)
+**[Download Trad for Windows x64](https://github.com/ImGabri/Trad/releases/download/v1.0.0/Trad-Windows-x64.zip)** · [Releases and checksums](https://github.com/ImGabri/Trad/releases)
 
 ## First run on Windows
 

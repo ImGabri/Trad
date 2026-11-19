@@ -52,10 +52,40 @@ def m1_trigger(f: pd.DataFrame, cfg) -> pd.Series:
         v = f["tick_volume"]
         rising = pd.concat([v.shift(i) > v.shift(i + 1) for i in range(n - 1)], axis=1).all(axis=1)
         up, dn = up & rising, dn & rising
+    # VOLUME CONFIRMATION: require above-median volume for trend triggers
+    vol_med = f["tick_volume"].rolling(20).median()
+    high_vol = f["tick_volume"] > vol_med * cfg.strategy.vol_confirm_mult
+    # only apply volume filter when bias is non-zero (trend-seeking)
+    up = up & (cfg.strategy.vol_confirm_mult <= 1.0 | high_vol)
+    dn = dn & (cfg.strategy.vol_confirm_mult <= 1.0 | high_vol)
+    
+    # --- 15min trend filter: align M1 trigger with 15min bias
+    # If 15min EMA slope is available, use it to filter fakeouts
+    if "m15_ema_fast_slope" in f.columns and "m15_ema_slow_slope" in f.columns:
+        m15_bias = np.where(
+            (f["m15_ema_fast_slope"] > 0) & (f["m15_ema_slow_slope"] > 0), 1,
+            np.where(
+                (f["m15_ema_fast_slope"] < 0) & (f["m15_ema_slow_slope"] < 0), -1, 0
+            )
+        )
+        # Only allow upward triggers when 15min bias is bullish, etc.
+        up = up & (m15_bias != -1)  # filter short-bias upward triggers
+        dn = dn & (m15_bias != 1)   # filter long-bias downward triggers
+    
     return pd.Series(np.select([up, dn], [1, -1], 0), index=f.index)
 
 
 def session_state(idx: pd.DatetimeIndex, cfg) -> pd.DataFrame:
+    if cfg.strategy.skip_market_open_check:
+        # Skip all session/market checks for uninterrupted 24/7 trading
+        n = len(idx)
+        return pd.DataFrame({
+            "session": np.full(n, "off"),  # Always "off" when skipping checks
+            "entry_blocked": np.zeros(n, bool),
+            "market_closed": np.zeros(n, bool),
+            "must_flat": np.zeros(n, bool),
+        }, index=idx)
+    
     s = cfg.sessions
     dow = idx.dayofweek
     mins = np.asarray(idx.hour * 60 + idx.minute)
@@ -81,6 +111,8 @@ def session_state(idx: pd.DatetimeIndex, cfg) -> pd.DataFrame:
 
 
 def market_closed(idx: pd.DatetimeIndex, cfg) -> np.ndarray:
+    if cfg.strategy.skip_market_open_check:
+        return np.zeros(len(idx), bool)
     o, c = cfg.sessions.week_open, cfg.sessions.week_close
     ot, ct = _t(o.time), _t(c.time)
     dow, mins = idx.dayofweek, idx.hour * 60 + idx.minute
@@ -154,7 +186,7 @@ def decide_entry(cfg, *, rule: int, ai_dir: int, conf: float, has_ai: bool, sess
             return int(ai_dir), nw.news_scalp_sl_atr, nw.news_scalp_tp_atr, "news", "news_scalp"
         return 0, 0, 0, "", "news_event"
     thr = st.confidence_threshold
-    if session == "asia":
+    if session == "asia" and not cfg.strategy.skip_market_open_check:
         thr = max(thr, cfg.sessions.asia_min_confidence)
     if rule == 0:
         # fast mode: very confident AI may enter without the full rule setup (never against the M15 bias)
