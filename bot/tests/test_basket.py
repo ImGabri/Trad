@@ -67,3 +67,38 @@ def test_live_basket_legs_share_stop_and_target(tmp_path):
     assert any("tp" in o for o in sl_moves) or len(opens) == len({o.get("comment") for o in opens})
     trades = pd.read_sql_query("SELECT * FROM trades", r.store.conn)
     assert (trades.reason_open == "basket").all() and trades.pnl.notna().sum() >= 1
+
+
+def test_live_hyper_opens_independent_trades_up_to_max_open(tmp_path):
+    m1 = synthetic_m1(days=40, seed=6)
+    mod = fake_mt5.install(m1, start_bar=20000)
+    for name in ("data", "execution", "live"):
+        if name in sys.modules:
+            importlib.reload(sys.modules[name])
+    from config import load_config
+    from features import build_features
+    from ai_model import DirectionModel
+    import live
+    cfg = load_config(ROOT / "config.yaml", use_tuned=False, overrides={
+        "strategy": {"mode": "basket"}, "sessions": {"asia_enabled": True, "no_entry_windows": []},
+        "basket": {"candles_tf": "m1", "candles": 1, "follow": False, "independent": True, "max_open": 4,
+                   "tp_atr": 0.25, "sl_atr": 1.0, "hold_minutes": 15, "equity_per_001": 1000},
+        "risk": {"max_daily_trades": 100000}})
+    cfg.broker.server_utc_offset_hours = 2
+    DirectionModel.fit(build_features(m1.iloc[:20000], cfg), cfg, rounds=40).save(tmp_path / "data" / "model")
+    n = {"i": 0, "peak": 0}
+    fake = mod._fake
+    def keep():
+        n["i"] += 1
+        n["peak"] = max(n["peak"], len(fake.positions))
+        return n["i"] < 700
+    r = live.Runner(cfg, tmp_path, "demo", keep)
+    r.events = pd.DatetimeIndex([], tz="UTC"); r.last_cal = 1e18
+    live.time.sleep = lambda s: None
+    r.run()
+    opens = [o for o in fake.orders if o["action"] == 1 and "position" not in o]
+    assert len(opens) >= 5, "hyper should trade a lot"
+    assert n["peak"] <= 4
+    legs = list(fake.positions.values())
+    if len(legs) > 1:   # independent trades: each has its own stop / target
+        assert len({round(p.sl, 2) for p in legs}) > 1

@@ -258,7 +258,16 @@ class Runner:
         now = time.time()
         phase = self._phase_now() if live else "none"
         basket = self._basket_mode()
-        if basket and live:
+        if basket and live and getattr(self.cfg.basket, "independent", False):  # ☠️ Hyper: every trade has its own clock
+            hold_s = float(self.cfg.basket.hold_minutes) * 60
+            for t, p in list(live.items()):
+                mm = meta.get(t) or {}
+                if now - float(mm.get("open_ts", now)) >= hold_s:
+                    mm["close_reason"] = "basket_time"
+                    self._set_meta(t, mm)
+                    ex.close_position(p, self.dev_points, "hyper time")
+                    live.pop(t)
+        elif basket and live:
             b = self.state.get("basket") or {}
             if b and now - b.get("open_ts", now) >= float(self.cfg.basket.hold_minutes) * 60:
                 for p in live.values():
@@ -514,6 +523,39 @@ class Runner:
         tick = mt5.symbol_info_tick(self.gold)
         st = self.state.get("basket")
         decision = "basket: waiting for a candle run"
+        if getattr(b, "independent", False):  # ☠️ Hyper: a new standalone trade on every signal, up to max_open at once
+            side = int(s["rule_signal"])
+            max_open = int(getattr(b, "max_open", 1))
+            acc = mt5.account_info()
+            lots = round(self.info.volume_min * max(1, int(equity // float(b.equity_per_001))), 2)
+            margin = mt5.order_calc_margin(mt5.ORDER_TYPE_BUY if side >= 0 else mt5.ORDER_TYPE_SELL, self.gold,
+                                           lots, tick.ask) or 0.0 if tick else 0.0
+            if side == 0:
+                decision = f"hyper: {len(positions)} open, no signal"
+            elif s["entry_blocked"] or s["news_phase"] in ("pre", "event"):
+                decision = "hyper: blocked (session / news)"
+            elif float(row["spread_ratio"]) > cfg.risk.spread_filter_mult:
+                decision = "hyper: spread too wide"
+            elif self.paused or self.risk.hard_stop or self.risk.daily_halt or \
+                    self.risk.trades_today >= cfg.risk.max_daily_trades:
+                decision = "hyper: paused by a safety rule"
+            elif len(positions) >= max_open:
+                decision = f"hyper: {len(positions)}/{max_open} open (full)"
+            elif not acc or acc.margin_free < 1.5 * margin:
+                decision = "hyper: not enough free margin"
+            else:
+                sl_d, tp_d = float(b.sl_atr) * a, float(b.tp_atr) * a
+                fill = ex.open_market(self.gold, side, lots, sl_d, tp_d, self.dev_points, "xau-v2 hyper")
+                if fill.ok:
+                    self._record_leg(fill, side, lots, fill.price - side * sl_d, fill.price + side * tp_d, a, conf, s)
+                    decision = f"hyper: opened {'BUY' if side > 0 else 'SELL'} {lots} ({len(positions) + 1}/{max_open})"
+                else:
+                    decision = f"hyper: MT5 rejected ({fill.retcode})"
+            self.last_decision = dict(time=bar_time.strftime("%Y-%m-%d %H:%M"), close=round(float(row["close"]), 2),
+                                      bias=int(s["bias"]), rule=side, p_up=round(p_up, 3), conf=round(conf, 3),
+                                      session=str(s["session"]), news=str(s["news_phase"]), decision=decision)
+            log.info("bar %s %s", bar_time.strftime("%H:%M"), decision)
+            return
         if not positions:
             self.state.pop("basket", None)
             side = int(s["rule_signal"])
