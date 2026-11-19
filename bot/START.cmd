@@ -16,6 +16,15 @@ if not exist "data\.unblocked" (
 )
 set PYTHONUTF8=1
 
+rem --- first run: unpack the bundled Python runtime (one archive; Windows' tar is much faster than Explorer)
+if not exist "runtime\python.exe" if exist "runtime.zip" (
+    echo Unpacking the bundled Python runtime, one moment...
+    if not exist "runtime" mkdir "runtime"
+    tar -xf "runtime.zip" -C "runtime" 2>nul
+    if not exist "runtime\python.exe" powershell -NoProfile -ExecutionPolicy Bypass -Command "Expand-Archive -LiteralPath 'runtime.zip' -DestinationPath 'runtime' -Force"
+    if exist "runtime\python.exe" ( del "runtime.zip" ) else ( echo Could not unpack runtime.zip & pause & exit /b 1 )
+)
+
 if exist "runtime\pythonw.exe" (
     start "" "runtime\pythonw.exe" "%~dp0main.py" ui
     exit /b 0

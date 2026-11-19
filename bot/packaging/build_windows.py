@@ -32,6 +32,24 @@ def app_files() -> list[str]:
 APP_FILES = app_files()
 
 
+PRUNE_DIRS = {"tests", "test", "__pycache__", "include", "sample_data"}
+PRUNE_EXT = {".pyi", ".h", ".hpp", ".pxd", ".pyx", ".lib", ".cmake", ".c", ".cpp"}
+
+
+def prune(site: Path) -> int:
+    """Drop what the libraries ship but never use at runtime (their own test suites, C headers, link
+    libraries, type stubs). ~3,500 fewer files → much faster unzip and antivirus scan on Windows."""
+    n = 0
+    for p in sorted(site.rglob("*"), key=lambda q: len(q.parts), reverse=True):
+        if p.is_dir() and p.name in PRUNE_DIRS:
+            n += sum(1 for _ in p.rglob("*") if _.is_file())
+            shutil.rmtree(p, ignore_errors=True)
+        elif p.is_file() and p.suffix.lower() in PRUNE_EXT:
+            p.unlink()
+            n += 1
+    return n
+
+
 def main():
     dist = BOT / "dist"
     dist.mkdir(exist_ok=True)
@@ -56,6 +74,7 @@ def main():
                         "--only-binary=:all:", "--platform", "win_amd64", "--python-version", "3.12",
                         "--implementation", "cp", "--target", str(site), "-r", str(app / "requirements.txt"),
                         "MetaTrader5"], check=True)
+        print(f"pruned {prune(site):,} unused library files")
         if sys.platform == "win32":
             exe = str(rt / "python.exe")
             subprocess.run([exe, "-B", "-c", "import main, MetaTrader5, pandas, lightgbm, yaml, matplotlib, sklearn, pyarrow"],
@@ -64,11 +83,19 @@ def main():
                             "-p", "test_demo_execution.py"], cwd=app, check=True)
             subprocess.run([exe, "-X", "utf8", "-B", "main.py", "smoke"], cwd=app, check=True)
             shutil.rmtree(app / "data_smoke", ignore_errors=True)
+        # Pack the runtime as ONE inner archive: Explorer then copies ~50 files instead of ~5,000, and
+        # START.cmd unpacks it once with Windows' built-in tar (seconds instead of an hour).
+        with ZipFile(app / "runtime.zip", "w", ZIP_DEFLATED, compresslevel=6) as z:
+            for p in sorted(rt.rglob("*")):
+                if p.is_file() and "__pycache__" not in p.parts:
+                    z.write(p, p.relative_to(rt))
+        shutil.rmtree(rt)
         zpath = dist / ASSET
         with ZipFile(zpath, "w", ZIP_DEFLATED, compresslevel=6) as z:
             for p in sorted(app.rglob("*")):
                 if p.is_file() and "__pycache__" not in p.parts:
-                    z.write(p, p.relative_to(work))
+                    # the inner runtime.zip is already compressed — store it as-is
+                    z.write(p, p.relative_to(work), compress_type=0 if p.name == "runtime.zip" else ZIP_DEFLATED)
     digest = hashlib.sha256(zpath.read_bytes()).hexdigest()
     (dist / "SHA256SUMS.txt").write_text(f"{digest}  {ASSET}\n")
     print(f"{zpath} {zpath.stat().st_size / 1e6:.1f} MB sha256 {digest}")

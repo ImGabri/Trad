@@ -8,7 +8,7 @@ the background, restarts at every Windows logon and retrains itself every weeken
 1. Install **PU Prime MT5**, log in to your **demo** account with **Save password** ticked, and click
    **Algo Trading** so it turns green.
 2. Download **TradV2-XAUUSD-Scalper-Windows-x64.zip**, right-click → **Extract All…** to e.g. `C:\TradV2`, and
-   double-click **START.cmd**. Python and all libraries are included.
+   double-click **START.cmd**. Python and all libraries are included. Extracting takes seconds (about 40 files). The first START unpacks the bundled Python in about 20 seconds.
 3. In the dashboard that opens, press **▶ Start trading**.
    The first start downloads ~7 years of gold history, trains the AI and tunes the rules (10–30 min). Then the bot
    starts trading on its own.
