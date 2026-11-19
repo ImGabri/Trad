@@ -96,11 +96,11 @@ def doctor(cfg):
     return 0
 
 
-def prepare(cfg, years: float):
+def prepare(cfg, years: float, dukascopy: bool = True, trials: int = 60):
     from prepare import download, research
-    print(f"Downloading up to {years:g} years of M1 history from MT5 …")
-    m1, corr = download(cfg, DATA, years)
-    research(cfg, DATA, m1, corr)
+    print(f"Downloading up to {years:g} years of M1 history (PUPrime MT5{' + Dukascopy for older data' if dukascopy else ''}) …")
+    m1, corr = download(cfg, DATA, years, dukascopy_back=dukascopy)
+    research(cfg, DATA, m1, corr, trials=trials)
     open_report()
 
 
@@ -214,10 +214,11 @@ def smoke():
     sys.path.insert(0, str(APP / "tests"))
     from synthetic import synthetic_m1
     from prepare import research
-    cfg = load_config(APP / "config.yaml", overrides={"backtest": {"wf_window_months": 1, "holdout_months": 1}})
     out = APP / "data_smoke"
+    cfg = load_config(APP / "config.yaml", overrides={"backtest": {"wf_window_months": 1, "holdout_months": 1}},
+                      tuned_path=out / "tuned.yaml")
     m1 = synthetic_m1(days=150)
-    s = research(cfg, out, m1, {})
+    s = research(cfg, out, m1, {"_equity": 23.0}, trials=8)
     assert "holdout" in s, "smoke: no holdout section"
     print("SMOKE OK")
 
@@ -245,7 +246,7 @@ def status_screen():
 MENU = f"""
 =====  XAUUSD AI Scalper v{VERSION} — PUPrime MT5 (demo)  =====
  1  Check MT5 connection, symbols and history
- 2  Download history, train AI and backtest (opens report)
+ 2  Download history (MT5 + Dukascopy), train AI, retune rules, backtest
  3  Watch mode in this window (signals only, no orders)
  4  Demo trading in this window
  5  Background: start DEMO trading (survives closing this window / reboot+logon)
@@ -272,7 +273,7 @@ def menu():
             if ch == "1":
                 doctor(cfg)
             elif ch == "2":
-                y = input("Years of history [3]: ").strip() or "3"
+                y = input("Years of history [7]: ").strip() or "7"
                 prepare(cfg, float(y))
             elif ch in ("3", "4"):
                 print("Running — press Ctrl+C to stop.")
@@ -316,7 +317,8 @@ def cli():
     sub.add_parser("menu"); sub.add_parser("doctor"); sub.add_parser("watch"); sub.add_parser("demo")
     sub.add_parser("worker"); sub.add_parser("kill"); sub.add_parser("reset"); sub.add_parser("smoke")
     sub.add_parser("status")
-    p = sub.add_parser("prepare"); p.add_argument("--years", type=float, default=3)
+    p = sub.add_parser("prepare"); p.add_argument("--years", type=float, default=7)
+    p.add_argument("--no-dukascopy", action="store_true"); p.add_argument("--trials", type=int, default=60)
     p = sub.add_parser("import-csv"); p.add_argument("path"); p.add_argument("--utc-offset", type=float, default=0)
     p = sub.add_parser("import-codex"); p.add_argument("paths", nargs="+")
     p = sub.add_parser("background"); p.add_argument("action", choices=["start-demo", "start-watch", "status", "stop"])
@@ -335,7 +337,7 @@ def cli():
     if a.cmd == "doctor":
         return doctor(cfg)
     if a.cmd == "prepare":
-        return prepare(cfg, a.years)
+        return prepare(cfg, a.years, not a.no_dukascopy, a.trials)
     if a.cmd == "import-csv":
         return import_csv(cfg, a.path, a.utc_offset)
     if a.cmd in ("watch", "demo"):

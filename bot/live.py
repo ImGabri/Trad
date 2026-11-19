@@ -319,7 +319,7 @@ class Runner:
         from config import commission_per_side
         lots = position_size(equity, sl_d, self.info.trade_contract_size, cfg.risk.risk_per_trade_pct,
                              self.info.volume_step, self.info.volume_min, min(self.info.volume_max, cfg.instrument.max_lot),
-                             commission_per_side(cfg))
+                             commission_per_side(cfg), getattr(cfg.risk, "min_lot_max_risk_pct", 0))
         if lots <= 0:
             log.info("skip: min lot would risk more than %.2f%% of equity", cfg.risk.risk_per_trade_pct)
             return

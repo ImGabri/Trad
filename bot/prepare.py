@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import copy
 import io
 import json
 import logging
@@ -20,7 +21,7 @@ from strategy import compute_signals
 log = logging.getLogger("prepare")
 
 
-def download(cfg, data_dir: Path, years: float, say=print) -> tuple[pd.DataFrame, dict]:
+def download(cfg, data_dir: Path, years: float, say=print, dukascopy_back: bool = True) -> tuple[pd.DataFrame, dict]:
     from data import MT5Connection, Store
     conn = MT5Connection(cfg)
     if not conn.connect():
@@ -51,15 +52,50 @@ def download(cfg, data_dir: Path, years: float, say=print) -> tuple[pd.DataFrame
             df = pd.concat([extra[~extra.index.isin(df.index)], df]).sort_index()
         say(f"  {sym}: {len(df):,} bars {df.index.min():%Y-%m-%d} → {df.index.max():%Y-%m-%d}" if len(df) else f"  {sym}: no data")
         out[key] = df
+    acc = __import__("data").mt5.account_info()
+    equity = float(acc.equity) if acc else None
     conn.shutdown()
     gold_df = out.pop("gold", pd.DataFrame())
+    if dukascopy_back:
+        gold_df = _with_dukascopy(store, gold_df, start, say)
     if len(gold_df) < 50_000:
         raise RuntimeError(f"Only {len(gold_df):,} gold M1 bars. In MT5 open View → Symbols → {gold} → Bars, "
                            "request more history, then try again (or load a CSV with 'import-csv').")
-    return gold_df, {k: v["close"] for k, v in out.items() if len(v)}
+    corr = {k: v["close"] for k, v in out.items() if len(v)}
+    corr["_equity"] = equity
+    return gold_df, corr
 
 
-def research(cfg, data_dir: Path, m1: pd.DataFrame, corr: dict, say=print) -> dict:
+def _with_dukascopy(store, mt5_df: pd.DataFrame, start: datetime, say=print) -> pd.DataFrame:
+    """Fill history older than the broker's M1 depth from Dukascopy (cached in SQLite as XAUUSD_DUKA)."""
+    import dukascopy
+    first_needed = mt5_df.index.min() if len(mt5_df) else pd.Timestamp.now(tz="UTC")
+    have = store.load_bars("XAUUSD_DUKA", "M1", start)
+    last_have = have.index.max() if len(have) else None
+    a = (last_have + pd.Timedelta(days=1)).date() if last_have is not None else start.date()
+    b = first_needed.date()
+    if a < b:
+        say(f"  Dukascopy: downloading XAUUSD M1 {a} → {b} (older than PUPrime's history; ~1 min per year)")
+        new = dukascopy.download(a, b, say=say)
+        if len(new):
+            med = new["close"].median()
+            if not 200 < med < 20000:
+                say(f"  Dukascopy data looks wrong (median price {med:.1f}) — skipped"); new = new.iloc[0:0]
+            store.save_bars("XAUUSD_DUKA", "M1", new)
+        have = store.load_bars("XAUUSD_DUKA", "M1", start)
+    if not len(have):
+        say("  Dukascopy: no data (site unreachable?) — using PUPrime history only")
+        return mt5_df
+    older = have[have.index < first_needed]
+    say(f"  + Dukascopy {len(older):,} older bars from {older.index.min():%Y-%m-%d}" if len(older) else "  Dukascopy: nothing older needed")
+    return pd.concat([older, mt5_df]).sort_index()
+
+
+def research(cfg, data_dir: Path, m1: pd.DataFrame, corr: dict, say=print, trials: int = 60) -> dict:
+    from config import load_config
+    from optimize import optimize
+    corr = dict(corr)
+    equity = corr.pop("_equity", None)
     out_dir = data_dir / "report"
     out_dir.mkdir(parents=True, exist_ok=True)
     refresh_calendar(cfg, data_dir)
@@ -73,6 +109,20 @@ def research(cfg, data_dir: Path, m1: pd.DataFrame, corr: dict, say=print) -> di
     p_wf, folds = walk_forward_predictions(f, cfg, log=say)
     say("Hold-out (final months, never seen in training) …")
     p_ho, _, (ho_a, ho_b) = holdout_predictions(f, cfg)
+
+    opt = None
+    if len(p_wf) > 20_000 and trials > 0:
+        opt = optimize(f, p_wf, events, cfg, data_dir, trials, say=say)
+    elif trials > 0:
+        say("Not enough out-of-sample data to retune rules safely (need ~2 weeks of walk-forward predictions).")
+    # re-load with tuned.yaml (if adopted) and the real account size for the final report
+    ov = copy.deepcopy(cfg.raw.get("_overrides") or {})
+    if equity:
+        ov.setdefault("backtest", {})["initial_equity"] = round(equity, 2)
+    cfg = load_config(cfg.raw.get("_path"), overrides=ov, tuned_path=data_dir / "tuned.yaml")
+    sig = compute_signals(f, cfg, events)
+    if equity:
+        say(f"Final backtests use your account size: {equity:.2f}")
 
     sections = {}
     for name, p in (("walk_forward", p_wf), ("holdout", p_ho)):
@@ -94,9 +144,9 @@ def research(cfg, data_dir: Path, m1: pd.DataFrame, corr: dict, say=print) -> di
     model.meta["confidence_threshold"] = cfg.strategy.confidence_threshold
     model.save(data_dir / "model")
     imp = model.importance(f)
-    html = write_report(out_dir, sections, folds, imp, cfg)
+    html = write_report(out_dir, sections, folds, imp, cfg, opt)
     summary = {k: {kk: v["metrics"] for kk, v in s["results"].items()} | {"auc": s["auc"]} for k, s in sections.items()}
-    (out_dir / "summary.json").write_text(json.dumps(dict(folds=folds, sections=summary,
+    (out_dir / "summary.json").write_text(json.dumps(dict(folds=folds, sections=summary, optimization=opt,
                                                           holdout=[str(ho_a), str(ho_b)], model=model.meta),
                                                      indent=2, default=str))
     for k, s in sections.items():
@@ -116,7 +166,7 @@ def _png(fig) -> str:
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
 
 
-def write_report(out_dir: Path, sections: dict, folds: list, imp: pd.Series, cfg) -> Path:
+def write_report(out_dir: Path, sections: dict, folds: list, imp: pd.Series, cfg, opt: dict | None = None) -> Path:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -147,6 +197,14 @@ def write_report(out_dir: Path, sections: dict, folds: list, imp: pd.Series, cfg
         m = res["strategy"]["metrics"]
         if m.get("exit_reasons"):
             parts.append("<p>Exit reasons: " + ", ".join(f"{k} {v}" for k, v in m["exit_reasons"].items()) + "</p>")
+    if opt:
+        parts.append("<h2>Rule optimisation</h2><p>" + ("Adopted tuned rules (data/tuned.yaml)." if opt["adopted"] else
+                     "No rule set was profitable on both tuning and validation — defaults kept; run watch mode only.") + "</p>")
+        rows = [dict(trial=r["trial"], **{k.split(".")[1]: v for k, v in r["params"].items()},
+                     tune_n=r["tune"]["n"], tune_R=round(r["tune"]["exp_r"], 3), tune_PF=round(r["tune"]["pf"], 2),
+                     val_n=r["validate"]["n"], val_R=round(r["validate"]["exp_r"], 3), val_PF=round(r["validate"]["pf"], 2))
+                for r in opt["top5"]]
+        parts.append(pd.DataFrame(rows).to_html(index=False))
     if folds:
         parts.append("<h2>Walk-forward folds</h2>" + pd.DataFrame(folds).to_html(index=False))
     fig, ax = plt.subplots(figsize=(8, 7))

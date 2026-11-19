@@ -33,6 +33,7 @@ class Pos:
     spread_in: float
     conf: float
     kind: str  # "normal" | "news"
+    risk_usd: float = 0.0
 
 
 def run_backtest(f: pd.DataFrame, sig: pd.DataFrame, cfg, ai_dir: pd.Series | None = None,
@@ -88,7 +89,7 @@ def run_backtest(f: pd.DataFrame, sig: pd.DataFrame, cfg, ai_dir: pd.Series | No
         equity_cash += gross - fee
         trades.append(dict(open_time=idx[p.open_i], close_time=idx[i], side=p.side, lots=p.lots,
                            entry=p.entry, exit=px, sl=p.sl, tp=p.tp, pnl=gross - fee, commission=fee,
-                           hold_min=(i - p.open_i + 1), reason=reason, conf=p.conf, kind=p.kind,
+                           hold_min=(i - p.open_i + 1), reason=reason, r=(gross - fee) / p.risk_usd if p.risk_usd else 0.0, conf=p.conf, kind=p.kind,
                            spread_in=p.spread_in, session=session[p.open_i]))
 
     def exit_px(p: Pos, i: int, at: float | None = None) -> float:
@@ -105,10 +106,10 @@ def run_backtest(f: pd.DataFrame, sig: pd.DataFrame, cfg, ai_dir: pd.Series | No
             entry = o[i] + spr[i] + slip if side > 0 else o[i] - slip
             sl_d, tp_d = slm * a, tpm * a
             lots = position_size(equity_cash, sl_d, cs, rk.risk_per_trade_pct, ins.lot_step, ins.min_lot,
-                                 ins.max_lot, comm)
+                                 ins.max_lot, comm, getattr(rk, "min_lot_max_risk_pct", 0))
             if lots > 0:
                 positions.append(Pos(side, entry, entry - side * sl_d, entry + side * tp_d, lots, i, a,
-                                     entry, spr[i], cf, kind))
+                                     entry, spr[i], cf, kind, sl_d * lots * cs))
                 risk.trades_today += 1
                 if kind == "news":
                     news_used.add(ev_id[di])
