@@ -1,0 +1,35 @@
+name: Build and publish Windows release
+on:
+  push:
+    branches: [main]
+    paths: [VERSION]
+  workflow_dispatch:
+
+concurrency:
+  group: trad-windows-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          architecture: x64
+      - name: Build and test bundled Windows runtime
+        env:
+          TRAD_TEST_SCHEDULER: '1'
+        run: python packaging/build_windows.py
+      - name: Publish downloadable ZIP and checksum
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          REVISION: ${{ github.sha }}
+        run: python packaging/publish_release.py

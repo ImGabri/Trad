@@ -1,0 +1,32 @@
+{
+  "symbol": "auto",
+  "history_days": 14,
+  "strategy": {
+    "hold_seconds": 180,
+    "entry_window_seconds": 2,
+    "latency_ms": 250,
+    "trigger_bucket_ms": 2000,
+    "min_jump_usd_oz": 0.02,
+    "min_jump_spreads": 0.20,
+    "stop_atr": 1.25,
+    "minimum_stop_usd_oz": 0.70,
+    "target_multiple": 1.4,
+    "max_spread_usd_oz": 0.45,
+    "max_spread_fraction_of_stop": 0.25,
+    "commission_roundtrip_usd_oz": 0.08,
+    "slippage_usd_oz_each_side": 0.04,
+    "min_model_score": 0.56,
+    "cooldown_seconds": 2,
+    "max_entries_utc_day": 60,
+    "news_before_minutes": 10,
+    "news_after_minutes": 5
+  },
+  "demo": {
+    "risk_fraction": 0.001,
+    "daily_equity_stop_fraction": 0.01,
+    "max_lots": 0.10,
+    "max_quote_age_seconds": 4,
+    "deviation_points": 10,
+    "poll_ms": 50
+  }
+}
