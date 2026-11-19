@@ -159,12 +159,13 @@ STYLES["perfect"] = STYLES["turbo"]  # 🎯 Perfect = best backtested strategy (
 BASKET_DEFAULT = {"candles_tf": "m5", "candles": 5, "follow": True, "step_atr": 0.75, "max_entries": 2, "tp_atr": 1.0,
                   "sl_atr": 6.0, "hold_minutes": 240, "equity_per_001": 50}
 STYLES["basket"] = {"strategy": {"mode": "basket"}, "basket": dict(BASKET_DEFAULT), "risk": {"max_daily_trades": 100000}}
-# ☠️ Extreme: basket at maximum speed — 2 one-minute candles decide, 4 legs, quick target, 24 h, no daily cap.
-# Backtest (€100): ~40 baskets/day, 78–86 % won, but blown in 2020–23, 2024–25 and Aug 2025–Nov 2026.
+# ☠️ Extreme: the most trades of 432 tested "crazy" variants — fades every 2-candle M1 run, one position, tiny
+# target (0.25×ATR), 1×ATR stop, out after 15 min, 24 h, no daily cap. Backtest: ~110 trades/day, 55–72 % won,
+# about −$0.38 per 0.01-lot trade (= the spread) → €100 fell to ~€12 in every period (2020–26). Demo only.
 STYLES["extreme"] = {"strategy": {"mode": "basket"}, "risk": {"max_daily_trades": 100000},
                      "sessions": {"asia_enabled": True},
-                     "basket": dict(BASKET_DEFAULT, candles_tf="m1", candles=2, step_atr=0.3, max_entries=4, tp_atr=0.5,
-                                    sl_atr=3.0, hold_minutes=60)}
+                     "basket": dict(BASKET_DEFAULT, candles_tf="m1", candles=2, follow=False, step_atr=0.3, max_entries=1,
+                                    tp_atr=0.25, sl_atr=1.0, hold_minutes=15)}
 for _k in ("active", "careful"):  # leaving Turbo/Basket restores the scalping engine
     STYLES[_k].setdefault("strategy", {}).update(mode="scalp", ai_gate=True)
 
@@ -355,7 +356,7 @@ def action(name: str, body: dict) -> str:
                "careful": "Careful: only high-confidence setups.",
                "turbo": "🎯 Perfect: the best backtested strategy (hourly trend breakouts, 1 % risk). Use €100+.",
                "perfect": "🎯 Perfect: the best backtested strategy (hourly trend breakouts, 1 % risk). Use €100+.",
-               "extreme": "☠️ Extreme: ~40 baskets a day on 1-minute candles. Lost money in every backtest period.",
+               "extreme": "☠️ Extreme: ~110 trades a day (a new one every few minutes). Lost money in every backtest period.",
                "basket": "🧺 Basket: follows the last candles and adds legs; whole basket closes together (lost money in backtests)."}
         return msg[style] + _restart_if_running()
     if name == "test_trade":

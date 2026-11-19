@@ -35,12 +35,14 @@ tab: the bot keeps running, stops Windows from going to sleep while it trades, a
   is applied exactly as tested.
   - Backtest (€100 start, 1 % risk, real Standard costs): **+125 %** in 2019–23, **+617 %** in 2024–mid-25 and
     **+529 %** from Aug 2025 to Nov 2026. The worst drawdown was −84 %.
-- **☠️ Extreme** is a basket that trades very fast:
-  - It follows the last 2 one-minute candles and adds up to 4 legs every 0.3 × ATR.
-  - The basket target is 0.5 × ATR, with a 3 × ATR stop and a 60-minute limit.
-  - It trades around the clock with no daily limit, about 40 baskets a day.
-  - **Backtest:** it wins 78–86 % of baskets but loses about $0.70–$1.10 per basket on average. A €100 account
-    was **blown in every tested period**. It is a demo experiment, and the dashboard asks you to confirm.
+- **☠️ Extreme** makes a new trade every few minutes:
+  - After 2 one-minute candles of the same colour, it trades the other way (about 110 trades a day, 24 h).
+  - It holds one position: target 0.25 × ATR, stop 1 × ATR, closed after 15 minutes at the latest.
+  - It was the busiest of 432 tested "crazy" variants (a new trade every 1–5 minutes). None of the 432 made money in
+    all three periods.
+  - **Backtest:** 55–72 % of trades win, but each one loses about $0.38 on average, which is the spread. A €100
+    account fell to about €12 in every period from 2020 to 2026. It is a demo experiment, and the dashboard asks you
+    to confirm.
 - **🧺 Basket** now has unlimited trades a day, and it buys and sells.
 - **More data for the AI:**
   - **Currencies:** GBP, CHF, CAD, NZD, EUR/JPY, AUD/JPY, GBP/JPY and EUR/CHF.
