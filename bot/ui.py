@@ -155,7 +155,7 @@ STYLES = {  # one click instead of editing numbers
                 "sessions": {"asia_min_confidence": 0.75}},
     "turbo": {"strategy": {"mode": "turbo"}},  # exits/risk come from the config.yaml `turbo:` section
 }
-STYLES["basket"] = {"strategy": {"mode": "basket"}, "risk": {"max_daily_trades": 60}}
+STYLES["basket"] = {"strategy": {"mode": "basket"}, "risk": {"max_daily_trades": 100000}}  # no daily cap
 for _k in ("active", "careful"):  # leaving Turbo/Basket restores the scalping engine
     STYLES[_k].setdefault("strategy", {}).update(mode="scalp", ai_gate=True)
 
