@@ -51,9 +51,20 @@ flowchart LR
 | `risk.py` | ✅ | Sizing, survival rule, daily state, entry gating |
 | `backtest.py` | ✅ | Bar-by-bar engine with every §3/§5/§6 rule, cost model, metrics, baselines, walk-forward windows |
 | `tools/probe_symbols.py` | ✅ | Run on the VPS — confirms symbols, spec, offset, history depth |
-| `ai_model.py` | next | LightGBM training, walk-forward, SHAP, drift monitor |
-| `execution.py`, `monitor.py`, `main.py` | after | Live loop, Telegram, kill switch, Codex journal/runner reuse |
-| `notebooks/backtest.ipynb` | after | Equity, drawdown, monthly P&L, SHAP |
+| `ai_model.py` | ✅ | LightGBM, walk-forward OOS + holdout, SHAP (TreeSHAP via pred_contrib), drift monitor |
+| `news.py` | ✅ | ForexFactory weekly feed + Codex BLS calendar import + manual CSV, NFP rule for history |
+| `execution.py` | ✅ | Market orders with SL/TP attached, trailing via SLTP modify, closes, P&L from deal history |
+| `live.py` | ✅ | Watch/demo loop, per-bar decision, trailing/time stop/pre-news tighten, survival/daily stops, drift pause |
+| `monitor.py` | ✅ | JSON logs (7-day rotation), Telegram alerts + /status /pause /resume /stop, heartbeat |
+| `background.py`, `main.py`, `START.cmd` | ✅ | Menu launcher, Task Scheduler logon runner, kill switch, Codex data import |
+| `prepare.py` | ✅ | History download → walk-forward → backtests vs baselines → HTML report (equity, DD, monthly, SHAP) |
+| `packaging/build_windows.py` | ✅ | Self-contained zip with embedded Python 3.12 (buildable from Linux too) |
+
+## PUPrime symbols (confirmed from the Codex data, demo server PUPrime-Demo)
+
+Standard account suffix `.s`: gold `XAUUSD.s` (100 oz, 0.01 lot step, fixed ~$0.32 spread), dollar index `USDX.s`,
+S&P 500 `SP500.s`, plus NAS100.s, VIX.s, XAGUSD.s, EURUSD.s, USDJPY.s, USOUSD.s. **No US 10Y yield symbol**, so that
+feature stays empty.
 
 ## Decisions and caveats
 

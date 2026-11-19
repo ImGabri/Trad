@@ -2,3 +2,6 @@
 __pycache__/
 *.db
 tools/probe_report.json
+dist/
+data/
+data_smoke/

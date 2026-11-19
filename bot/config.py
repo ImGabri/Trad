@@ -59,4 +59,5 @@ def _deep_update(base: dict, upd: dict) -> None:
 
 def commission_per_side(cfg) -> float:
     """$ per lot per side for the configured account type."""
-    return 3.5 if str(cfg.broker.account_type).upper() == "PRIME" else cfg.backtest.commission_per_side_per_lot
+    t = str(cfg.broker.account_type).upper()
+    return {"PRIME": 3.5, "STANDARD": 0.0}.get(t, cfg.backtest.commission_per_side_per_lot)

@@ -2,9 +2,9 @@
 
 broker:
   server: ""                 # e.g. "PUPrime-Demo" — filled from MT5_SERVER in .env if blank
-  terminal_path: ""          # e.g. "C:/Program Files/PU Prime MT5 Terminal/terminal64.exe"
+  terminal_path: ""          # only if several MT5 terminals are installed, e.g. "C:/Program Files/PU Prime MT5 Terminal/terminal64.exe"
   server_utc_offset_hours: auto   # "auto" = detect from live tick time; or an integer (PUPrime is usually +2/+3)
-  account_type: ECN          # ECN ($1/side/lot) or PRIME ($3.5/side/lot)
+  account_type: STANDARD     # STANDARD (no commission, ~$0.32 spread, symbols end in .s) | ECN ($1/side/lot) | PRIME ($3.5/side/lot)
   leverage: 500              # used for margin estimates in backtest; live uses order_calc_margin
 
 symbols:
@@ -12,7 +12,7 @@ symbols:
   # Candidate names tried in order; first one that exists on the server wins. Run tools/probe_symbols.py.
   dxy:   [USDX, DXY, USDIndex, USIndex, DOLLAR_INDX, DX]
   us10y: [US10Y, US10Y.B, UST10Y, TNOTE, "10YNOTE"]
-  spx:   [US500, SP500, SPX500, SP500ft, SPX]
+  spx:   [SP500, US500, SPX500, SP500ft, SPX]
   fallback_provider: yfinance   # used when a correlated symbol is missing on MT5
   yfinance_tickers: {dxy: "DX-Y.NYB", us10y: "^TNX", spx: "ES=F"}
 
@@ -90,7 +90,7 @@ model:
   drift_tolerance_pct: 15
 
 backtest:
-  spread_cost: 0.10          # $ per oz, used when bar has no spread data
+  spread_cost: 0.32          # $ per oz, used only when a bar has no spread data (PUPrime Standard ≈ 0.32, ECN ≈ 0.10)
   commission_per_side_per_lot: 1.0
   slippage_pips: 2
   initial_equity: 10000
@@ -99,9 +99,7 @@ backtest:
   holdout_months: 3
 
 monitoring:
-  log_dir: "C:/bots/logs"
+  log_dir: "data/logs"       # relative to the app folder (or absolute, e.g. C:/bots/logs)
   log_retention_days: 7
-  db_path: "C:/bots/data/xau.db"
-  stop_file: "C:/bots/STOP"
   reconnect_interval_s: 30
   reconnect_timeout_s: 600

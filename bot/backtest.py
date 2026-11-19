@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 
 from config import commission_per_side
+from strategy import decide_entry
 from risk import RiskState, min_required_equity, position_size, survival_breached
 
 
@@ -178,24 +179,12 @@ def run_backtest(f: pd.DataFrame, sig: pd.DataFrame, cfg, ai_dir: pd.Series | No
         exposure[i] = bool(positions)
 
         # ---------- entry decision at bar close → fill next bar
-        if stop_reason or blocked[i] or gap_next[i] > 5 or np.isnan(atr5[i]) or atr5[i] <= 0:
+        if stop_reason or gap_next[i] > 5:
             continue
-        if spr_ratio[i] > rk.spread_filter_mult or slip > rk.max_slippage_pips * ins.pip_size:
-            continue
-        ph = phase[i]
-        side, slm, tpm, kind = 0, st.sl_atr, st.tp_atr, "normal"
-        if ph == "event":
-            if (has_ai and ev_id[i] not in news_used and conf[i] >= nw.news_scalp_min_conf and adir[i] != 0
-                    and spr_ratio[i] < nw.news_scalp_spread_mult):
-                side, slm, tpm, kind = adir[i], nw.news_scalp_sl_atr, nw.news_scalp_tp_atr, "news"
-        elif ph == "pre":
-            continue
-        else:
-            thr = max(st.confidence_threshold, cfg.sessions.asia_min_confidence if session[i] == "asia" else 0)
-            if rule[i] != 0 and adir[i] == rule[i] and conf[i] >= thr:
-                side = rule[i]
-                if ph == "post":
-                    slm *= nw.post_sl_mult
+        side, slm, tpm, kind, _ = decide_entry(
+            cfg, rule=int(rule[i]), ai_dir=int(adir[i]), conf=float(conf[i]), has_ai=has_ai,
+            session=session[i], blocked=bool(blocked[i]), phase=phase[i], event_id=int(ev_id[i]),
+            news_used=news_used, spread_ratio=float(spr_ratio[i]), atr_m5=float(atr5[i]), slippage_usd=slip)
         if side == 0:
             continue
         ok, _ = risk.can_open(len(positions), side,

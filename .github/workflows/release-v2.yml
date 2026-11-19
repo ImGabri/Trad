@@ -1,0 +1,41 @@
+name: Build and publish TradV2 scalper release
+on:
+  push:
+    branches: [main]
+    paths: [bot/VERSION]
+  workflow_dispatch:
+
+concurrency:
+  group: tradv2-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Build zip and smoke-test the bundled runtime
+        run: python bot/packaging/build_windows.py
+      - name: Publish release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V=$(cat bot/VERSION | tr -d '\r\n')
+          TAG="scalper-v$V"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" bot/dist/TradV2-XAUUSD-Scalper-Windows-x64.zip bot/dist/SHA256SUMS.txt --clobber
+          else
+            gh release create "$TAG" bot/dist/TradV2-XAUUSD-Scalper-Windows-x64.zip bot/dist/SHA256SUMS.txt \
+              --target "$GITHUB_SHA" --title "TradV2 XAUUSD AI Scalper $V" \
+              --notes "Download the zip, extract it and double-click START.cmd. Python and all libraries are bundled. See bot/README.md."
+          fi

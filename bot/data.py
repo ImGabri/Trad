@@ -346,3 +346,51 @@ def fetch_yfinance(ticker: str, interval: str = "1m", period: str = "7d") -> pd.
     close = df["Close"].squeeze()
     close.index = close.index.tz_convert("UTC") if close.index.tz else close.index.tz_localize("UTC")
     return close.rename(ticker)
+
+
+def import_codex_bundle(path: str | Path, store: "Store", data_dir: Path, gold_name: str = "XAUUSD") -> dict:
+    """Import the Codex build's market_data.zip (tick arrays + events) and markets.csv (1-min context closes)."""
+    import io
+    import json
+    import zipfile
+    path = Path(path)
+    out = {}
+    if path.suffix == ".csv":  # markets.csv: known_ms,series,value (value known at end of the minute)
+        mk = pd.read_csv(path)
+        names = {"dollar_index": "USDX", "sp500": "SP500", "nasdaq100": "NAS100", "vix": "VIX", "silver": "XAGUSD",
+                 "eurusd": "EURUSD", "usdjpy": "USDJPY", "wti": "USOUSD"}
+        for series, g in mk.groupby("series"):
+            t = pd.to_datetime(g["known_ms"], unit="ms", utc=True) - pd.Timedelta(minutes=1)
+            v = g["value"].to_numpy(float)
+            bars = pd.DataFrame({"open": v, "high": v, "low": v, "close": v, "tick_volume": 1.0, "spread": np.nan},
+                                index=pd.DatetimeIndex(t, name="time"))
+            store.save_bars(names.get(series, series.upper()), "M1", bars[~bars.index.duplicated()])
+            out[series] = len(bars)
+        return out
+    z = zipfile.ZipFile(path)
+    if "market_data.zip" in z.namelist():  # the download wraps the bundle once more
+        z = zipfile.ZipFile(io.BytesIO(z.read("market_data.zip")))
+    src = json.loads(z.read("source.json"))
+    load = lambda n: np.load(io.BytesIO(z.read(n)))
+    t = pd.to_datetime(load("ms.npy"), unit="ms", utc=True)
+    tk = pd.DataFrame({"bid": load("bid.npy"), "ask": load("ask.npy")}, index=pd.DatetimeIndex(t, name="time"))
+    g = tk.resample("1min", label="left", closed="left")
+    m1 = pd.DataFrame({"open": g["bid"].first(), "high": g["bid"].max(), "low": g["bid"].min(),
+                       "close": g["bid"].last(), "tick_volume": g["bid"].count().astype(float),
+                       "spread": (tk["ask"] - tk["bid"]).resample("1min").mean()}).dropna(subset=["close"])
+    store.save_bars(src.get("symbol", gold_name), "M1", m1)
+    if gold_name != src.get("symbol"):
+        store.save_bars(gold_name, "M1", m1)
+    out["gold_bars"] = len(m1)
+    if "events.csv" in z.namelist():
+        ev = pd.read_csv(io.BytesIO(z.read("events.csv")))
+        ev = ev[ev.get("active", 1) == 1]
+        cal = pd.DataFrame({"time_utc": pd.to_datetime(ev["event_ms"], unit="ms", utc=True), "title": ev["name"]})
+        p = data_dir / "events_manual.csv"
+        if p.exists():
+            old = pd.read_csv(p)
+            old["time_utc"] = pd.to_datetime(old["time_utc"], utc=True)
+            cal = pd.concat([old, cal])
+        cal.drop_duplicates().sort_values("time_utc").to_csv(p, index=False)
+        out["events"] = len(cal)
+    return out

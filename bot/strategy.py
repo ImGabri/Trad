@@ -125,3 +125,37 @@ def compute_signals(f: pd.DataFrame, cfg, events: pd.DatetimeIndex | None = None
                                   out["bias"], 0)
     out = out.join(session_state(f.index, cfg)).join(news_phase(f.index, events, cfg))
     return out
+
+
+def decide_entry(cfg, *, rule: int, ai_dir: int, conf: float, has_ai: bool, session: str, blocked: bool,
+                 phase: str, event_id: int, news_used: set, spread_ratio: float, atr_m5: float,
+                 slippage_usd: float) -> tuple[int, float, float, str, str]:
+    """Single source of truth for entry gating (backtest + live).
+    Returns (side, sl_atr_mult, tp_atr_mult, kind, reason). side 0 = no entry, reason says why."""
+    st, rk, nw = cfg.strategy, cfg.risk, cfg.news
+    if blocked:
+        return 0, 0, 0, "", "session_block"
+    if not np.isfinite(atr_m5) or atr_m5 <= 0:
+        return 0, 0, 0, "", "no_atr"
+    if not np.isfinite(spread_ratio) or spread_ratio > rk.spread_filter_mult:
+        return 0, 0, 0, "", "spread_filter"
+    if slippage_usd > rk.max_slippage_pips * cfg.instrument.pip_size:
+        return 0, 0, 0, "", "slippage_cap"
+    if phase == "pre":
+        return 0, 0, 0, "", "news_pre"
+    if phase == "event":
+        if (has_ai and event_id not in news_used and conf >= nw.news_scalp_min_conf and ai_dir != 0
+                and spread_ratio < nw.news_scalp_spread_mult):
+            return int(ai_dir), nw.news_scalp_sl_atr, nw.news_scalp_tp_atr, "news", "news_scalp"
+        return 0, 0, 0, "", "news_event"
+    if rule == 0:
+        return 0, 0, 0, "", "no_setup"
+    thr = st.confidence_threshold
+    if session == "asia":
+        thr = max(thr, cfg.sessions.asia_min_confidence)
+    if ai_dir != rule:
+        return 0, 0, 0, "", "ai_disagrees"
+    if conf < thr:
+        return 0, 0, 0, "", "low_confidence"
+    slm = st.sl_atr * (nw.post_sl_mult if phase == "post" else 1.0)
+    return int(rule), slm, st.tp_atr, "normal", "setup"
