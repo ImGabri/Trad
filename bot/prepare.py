@@ -268,8 +268,8 @@ def write_report(out_dir: Path, sections: dict, folds: list, imp: pd.Series, cfg
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     parts = [f"<h1>XAUUSD scalper — backtest report</h1><p>Generated {datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC. "
-             f"Costs: spread per bar (fallback ${cfg.backtest.spread_cost}), ${cfg.backtest.commission_per_side_per_lot}"
-             f"/side/lot commission, {cfg.backtest.slippage_pips} pips slippage. AI threshold "
+             f"Account {cfg.broker.account_type}. Costs: spread per bar (fallback ${cfg.backtest.spread_cost}), "
+             f"${__import__('config').commission_per_side(cfg)}/side/lot commission, {cfg.backtest.slippage_pips} pips slippage. AI threshold "
              f"{cfg.strategy.confidence_threshold}.</p>"]
     for name, s in sections.items():
         res = s["results"]
