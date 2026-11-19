@@ -12,18 +12,24 @@ def round_lots(lots: float, step: float, vmin: float, vmax: float) -> float:
 
 
 def position_size(equity: float, sl_distance: float, contract_size: float, risk_pct: float,
-                  step=0.01, vmin=0.01, vmax=5.0, commission_per_side=0.0) -> float:
-    """Lots such that SL loss (+ round-trip commission) ≤ risk_pct of equity. 0 if even min lot is too risky."""
+                  step=0.01, vmin=0.01, vmax=5.0, commission_per_side=0.0, min_lot_max_risk_pct: float = 0.0) -> float:
+    """Lots such that SL loss (+ round-trip commission) ≤ risk_pct of equity.
+    If even the minimum lot is too big, trade the minimum lot only when its risk ≤ min_lot_max_risk_pct
+    (small-account mode, e.g. a €20 demo); otherwise return 0 (skip)."""
     if sl_distance <= 0 or equity <= 0:
         return 0.0
     risk_amount = equity * risk_pct / 100
     loss_per_lot = sl_distance * contract_size + 2 * commission_per_side
-    return round_lots(risk_amount / loss_per_lot, step, vmin, vmax)
+    lots = round_lots(risk_amount / loss_per_lot, step, vmin, vmax)
+    if lots == 0 and min_lot_max_risk_pct > 0 and vmin * loss_per_lot <= equity * min_lot_max_risk_pct / 100:
+        return vmin
+    return lots
 
 
 def min_required_equity(price: float, sl_distance: float, contract_size: float, leverage: float,
                         min_lot: float = 0.01, margin_min_lot: float | None = None) -> float:
-    """margin for 0.01 lots + SL loss for 0.01 lots (§5 survival rule)."""
+    """margin for 0.01 lots + SL loss for 0.01 lots (§5 survival rule). Callers pass the SL distance at TYPICAL
+    volatility (24 h median ATR) so a single news spike cannot latch the hard stop."""
     margin = margin_min_lot if margin_min_lot is not None else price * contract_size * min_lot / leverage
     return margin + sl_distance * contract_size * min_lot
 

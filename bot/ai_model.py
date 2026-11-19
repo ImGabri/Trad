@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 from backtest import holdout_range, walk_forward_windows
-from features import MODEL_FEATURES, make_label
+from features import make_label, model_columns
 
 PARAMS = dict(objective="binary", learning_rate=0.03, num_leaves=31, min_child_samples=300,
               feature_fraction=0.8, bagging_fraction=0.8, bagging_freq=1, lambda_l2=5.0,
@@ -41,7 +41,7 @@ class DirectionModel:
     def fit(cls, f: pd.DataFrame, cfg, rounds: int = 600) -> "DirectionModel":
         import lightgbm as lgb
         y = make_label(f, cfg.model.label_horizon_m5_bars)
-        X = f[[c for c in MODEL_FEATURES if c in f.columns]]
+        X = f[model_columns(f)]
         ok = y.notna() & X["atr1"].notna()
         X, y = X[ok], y[ok]
         feats = usable_features(X)

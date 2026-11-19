@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,8 +17,10 @@ import pandas as pd
 
 import execution as ex
 from ai_model import DirectionModel, DriftMonitor, signal_from_proba
-from data import MT5Connection, Store, mt5, tick_microstructure
+from config import commission_per_side
+from data import MT5Connection, Store, acct_per_usd, mt5, remember_terminal, tick_microstructure
 from features import build_features
+from learning import OutcomeModel, entry_features
 from monitor import Status, Telegram, fmt_entry, fmt_exit
 from news import load_events, refresh_calendar
 from risk import RiskState, min_required_equity, position_size, survival_breached
@@ -28,9 +31,9 @@ M1_HISTORY = 13_000  # enough for M15 EMA200 and the 200-bar H1 ATR percentile
 
 
 class Runner:
-    def __init__(self, cfg, app_dir: Path, mode: str, keep_running=lambda: True):
+    def __init__(self, cfg, app_dir: Path, mode: str, keep_running=lambda: True, auto_retrain: bool = False):
         assert mode in ("watch", "demo")
-        self.cfg, self.mode, self.keep_running = cfg, mode, keep_running
+        self.cfg, self.mode, self.keep_running, self.auto_retrain = cfg, mode, keep_running, auto_retrain
         self.data_dir = app_dir / "data"
         self.data_dir.mkdir(exist_ok=True)
         self.stop_file = self.data_dir / "STOP"
@@ -38,6 +41,8 @@ class Runner:
         self.store.conn.execute("CREATE TABLE IF NOT EXISTS live_positions (ticket INTEGER PRIMARY KEY, "
                                 "json TEXT)")
         self.model = DirectionModel.load(self.data_dir / "model")
+        self.learn_dir = self.data_dir / "learning"
+        self.outcome = OutcomeModel.load(self.learn_dir)  # learns from the bot's own trades
         bt_wr = float(self.model.meta.get("backtest_win_rate", 50.0))
         self.drift = DriftMonitor(bt_wr, cfg.model.drift_window_trades, cfg.model.drift_tolerance_pct)
         self.tg = Telegram(cfg.secrets.telegram_token, cfg.secrets.telegram_chat_id)
@@ -54,6 +59,12 @@ class Runner:
         self.last_feat = None
         self.last_tg_poll = 0.0
         self.last_tick_log = None
+        self.last_ai: dict | None = None
+        self.last_decision: dict = {}
+        self.last_status = 0.0
+        self.last_retrain_check = 0.0
+        self.acct_usd = 1.0
+        self.exit_reason = "stopped"
 
     # ------------------------------------------------------------------ state
     def _load_state(self) -> dict:
@@ -90,9 +101,11 @@ class Runner:
             raise RuntimeError("This MT5 account is not a demo account — demo mode refuses to trade it.")
         if self.mode == "demo" and not mt5.terminal_info().trade_allowed:
             raise RuntimeError("Enable the 'Algo Trading' button in MT5, then start again.")
+        remember_terminal(self.data_dir)
         self.gold = self.conn.resolve_gold(cfg.symbols.primary)
+        self.acct_usd = acct_per_usd(self.gold)
         suffix = self.gold[len(cfg.symbols.primary):]
-        self.corr = {k: self.conn.resolve_symbol(getattr(cfg.symbols, k), suffix) for k in ("dxy", "us10y", "spx")}
+        self.corr = self.conn.resolve_context(cfg, suffix)
         self.info = mt5.symbol_info(self.gold)
         self.dev_points = int(cfg.risk.max_slippage_pips * cfg.instrument.pip_size / self.info.point)
         # restore day counters if same UTC day
@@ -107,24 +120,72 @@ class Runner:
         if self.risk.hard_stop:
             self.tg.send("⛔ Survival hard stop is latched — reset it from the launcher before new entries.")
         self.status.update(state="running", mode=self.mode, symbol=self.gold, server=acc.server, detail="")
+        _keep_awake(True)
         try:
             while self.keep_running():
                 if self.stop_file.exists():
                     self.kill("STOP file")
-                    return
+                    return "killed"
                 if not self.conn.ensure_connected(on_give_up=self._on_disconnect):
                     raise RuntimeError("MT5 connection lost for 10 minutes")
                 self._poll_telegram()
                 self._refresh_calendar()
                 self._manage_positions()
                 self._check_new_bar()
-                self.status.update(state="running", detail="paused" if self.paused else "")
+                self._publish_status()
+                if self._retrain_due():
+                    self.exit_reason = "retrain"
+                    break
                 time.sleep(0.5)
         finally:
+            _keep_awake(False)
             self._save_state()
-            self.status.update(state="stopped")
+            self.status.update(state="stopped" if self.exit_reason == "stopped" else self.exit_reason)
+        return self.exit_reason
 
     # ------------------------------------------------------------------ helpers
+    def _publish_status(self):
+        """Rich heartbeat for the dashboard (every 2 s)."""
+        if time.time() - self.last_status < 2:
+            return
+        self.last_status = time.time()
+        acc, tick = mt5.account_info(), mt5.symbol_info_tick(self.gold)
+        if acc is None:
+            return
+        pos = ex.bot_positions(self.gold) if self.mode == "demo" else []
+        self.status.update(
+            state="running", detail="paused" if self.paused else ("hard stop" if self.risk.hard_stop else
+                                                                  "daily loss halt" if self.risk.daily_halt else ""),
+            mode=self.mode, login=acc.login, server=acc.server, currency=acc.currency, balance=acc.balance,
+            equity=acc.equity, price=tick.bid if tick else None, spread=(tick.ask - tick.bid) if tick else None,
+            positions=[dict(ticket=p.ticket, side="BUY" if p.type == 0 else "SELL", lots=p.volume,
+                            open=p.price_open, sl=p.sl, tp=p.tp, profit=round(p.profit + p.swap, 2)) for p in pos],
+            today=self._today_stats(), last=self.last_decision, model=self.model.meta.get("trained_at", ""),
+            hard_stop=self.risk.hard_stop, daily_halt=self.risk.daily_halt, drift_pause=self.risk.drift_pause)
+
+    def _today_stats(self) -> dict:
+        day = datetime.now(timezone.utc).date().isoformat()
+        r = self.store.conn.execute("SELECT COUNT(*), COALESCE(SUM(pnl),0), COALESCE(SUM(pnl>0),0) FROM trades "
+                                    "WHERE substr(open_time,1,10)=? AND pnl IS NOT NULL", (day,)).fetchone()
+        return dict(trades=r[0], pnl=round(r[1], 2), wins=r[2], opened=self.risk.trades_today)
+
+    def _retrain_due(self) -> bool:
+        """Weekly retrain while gold is closed (Fri 22:00 → Sun 21:00 UTC), background worker only."""
+        if not self.auto_retrain or time.time() - self.last_retrain_check < 600:
+            return False
+        self.last_retrain_check = time.time()
+        now = datetime.now(timezone.utc)
+        closed = now.weekday() == 5 or (now.weekday() == 4 and now.hour >= 22) or (now.weekday() == 6 and now.hour < 21)
+        trained = pd.Timestamp(self.model.meta.get("trained_at", "2000-01-01"))
+        age_days = (pd.Timestamp.now(tz="UTC") - trained.tz_convert("UTC") if trained.tzinfo else
+                    pd.Timestamp.now() - trained).days
+        return closed and age_days >= self.cfg.model.retrain_every_days and not ex.bot_positions(self.gold)
+
+    def _ai_favours(self, side: int) -> bool:
+        a = self.last_ai
+        return bool(a and time.time() - a["ts"] < 180 and a["dir"] == side
+                    and a["conf"] >= getattr(self.cfg.strategy, "equity_tp_hold_conf", 0.55))
+
     def _on_disconnect(self):
         self.tg.send("⚠️ MT5 disconnected for 10 min. Broker-side SL/TP remain on open positions.", block=True)
 
@@ -199,6 +260,24 @@ class Runner:
             if new_sl is not None and (new_sl - p.sl) * side > 0.01:
                 if ex.modify_sl(p, new_sl):
                     m["trailed"] = True
+            # equity take-profit: out at +X % of equity unless the AI still expects more
+            eq_pct = float(getattr(st, "equity_tp_pct", 0) or 0)
+            if eq_pct > 0 and m.get("eq_entry"):
+                fee = 2 * commission_per_side(self.cfg) * p.volume * self.acct_usd
+                net = p.profit + p.swap - fee
+                if net >= m["eq_entry"] * eq_pct / 100:
+                    if not self._ai_favours(side):
+                        m["close_reason"] = "equity_tp"
+                        self._set_meta(t, m)
+                        ex.close_position(p, self.dev_points, "equity_tp")
+                        continue
+                    if not m.get("eq_hold"):
+                        m["eq_hold"] = True
+                        lock = p.price_open + getattr(st, "equity_tp_lock_frac", 0.5) * (px - p.price_open)
+                        if (lock - p.sl) * side > 0 and ex.modify_sl(p, lock):
+                            m["trailed"] = True
+                        self.tg.send(f"🚀 #{t} is +{eq_pct:g}% — AI expects more ({self.last_ai['conf']:.2f}), "
+                                     f"profit locked at {lock:.2f}, riding on")
             if now - m["open_ts"] >= st.time_stop_minutes * 60:
                 m["close_reason"] = "time"
                 self._set_meta(t, m)
@@ -223,6 +302,9 @@ class Runner:
             self._set_meta(t, None)
             self.tg.send(fmt_exit(dict(ticket=t, reason=reason, pnl=pnl, hold_min=hold)))
             log.info("closed %s %s pnl=%.2f", t, reason, pnl)
+            self.outcome.update_with_live(self.store, self.learn_dir / "sim_trades.csv")  # learn from this trade
+            if self.outcome.pipe is not None:
+                self.outcome.save(self.learn_dir)
             if self.drift.add(pnl) and not self.risk.drift_pause:
                 self.risk.drift_pause = True
                 self._save_state()
@@ -254,7 +336,7 @@ class Runner:
         m1 = self.conn.rates_latest(self.gold, "M1", M1_HISTORY + 1)
         corr = {}
         for k, sym in self.corr.items():
-            if sym and k in " ".join(self.model.features):
+            if sym and any(c.startswith(k + "_chg") for c in self.model.features):
                 bars = self.conn.rates_latest(sym, "M1", 300)
                 corr[k] = bars["close"] if not bars.empty else None
         now = pd.Timestamp.now(tz="UTC")
@@ -272,6 +354,8 @@ class Runner:
         ai_dir, conf = signal_from_proba(pd.Series([p_up]))
         ai_dir, conf = int(ai_dir.iloc[0]), float(conf.iloc[0])
         bar_time = f.index[-1]
+        self.last_ai = dict(dir=ai_dir, conf=conf, ts=time.time())
+        self.acct_usd = acct_per_usd(self.gold)
 
         acc = mt5.account_info()
         equity = acc.equity
@@ -289,10 +373,12 @@ class Runner:
                 ex.close_all(self.gold, self.dev_points, "daily_loss")
                 self.tg.send(f"🛑 Daily loss limit hit ({cfg.risk.daily_loss_limit_pct}%). Halted until next UTC day.")
             tick = mt5.symbol_info_tick(self.gold)
-            margin = mt5.order_calc_margin(mt5.ORDER_TYPE_BUY, self.gold, self.info.volume_min, tick.ask)
-            req = min_required_equity(tick.ask, cfg.strategy.sl_atr * row["m5_atr"], self.info.trade_contract_size,
-                                      acc.leverage or cfg.broker.leverage, self.info.volume_min, margin)
-            if not self.risk.hard_stop and survival_breached(equity, req, cfg.risk.survival_multiplier):
+            margin = mt5.order_calc_margin(mt5.ORDER_TYPE_BUY, self.gold, self.info.volume_min, tick.ask) or 0.0
+            atr_typ = float(row.get("m5_atr_typ", np.nan))
+            atr_typ = atr_typ if np.isfinite(atr_typ) and atr_typ > 0 else float(row["m5_atr"])
+            req = min_required_equity(tick.ask, cfg.strategy.sl_atr * atr_typ, self.info.trade_contract_size,
+                                      acc.leverage or cfg.broker.leverage, self.info.volume_min, margin / self.acct_usd)
+            if not self.risk.hard_stop and survival_breached(equity / self.acct_usd, req, cfg.risk.survival_multiplier):
                 ex.close_all(self.gold, self.dev_points, "survival")
                 self.risk.hard_stop = True
                 self.tg.send(f"⛔ SURVIVAL HARD STOP: equity {equity:.2f} ≤ {cfg.risk.survival_multiplier}× "
@@ -302,24 +388,32 @@ class Runner:
             cfg, rule=int(s["rule_signal"]), ai_dir=ai_dir, conf=conf, has_ai=True, session=s["session"],
             blocked=bool(s["entry_blocked"]), phase=s["news_phase"], event_id=int(self._event_key(s)),
             news_used=news_used, spread_ratio=float(row["spread_ratio"]), atr_m5=float(row["m5_atr"]),
-            slippage_usd=self._expected_slippage())
+            slippage_usd=self._expected_slippage(), bias=int(s["bias"]))
         ok, why2 = (False, "paused") if self.paused else self.risk.can_open(
             len(positions), side, [(1 if p.type == 0 else -1, p.profit) for p in positions])
+        x = entry_features(row, side, p_up, kind) if side != 0 else None
+        if side != 0 and ok:
+            allowed, p_win = self.outcome.allows(x)
+            if not allowed:
+                ok, why2 = False, f"self-learning veto (P(win) {p_win:.2f} < {self.outcome.threshold:.2f})"
         acted = side != 0 and ok
         self.store.record_prediction(time=str(bar_time), p_up=p_up, p_down=1 - p_up, confidence=conf,
                                      model_version=self.model.meta.get("trained_at", ""), signal=side, acted=int(acted))
+        decision = ("ENTER " + ("BUY" if side > 0 else "SELL")) if acted else (why2 or why)
+        self.last_decision = dict(time=bar_time.strftime("%Y-%m-%d %H:%M"), close=round(float(row["close"]), 2),
+                                  bias=int(s["bias"]), rule=int(s["rule_signal"]), p_up=round(p_up, 3),
+                                  conf=round(conf, 3), session=s["session"], news=s["news_phase"], decision=decision)
         log.info("bar %s close=%.2f spread=%.2f bias=%+d rule=%+d p_up=%.3f conf=%.2f phase=%s → %s",
                  bar_time.strftime("%H:%M"), row["close"], row["spread"], s["bias"], s["rule_signal"], p_up, conf,
-                 s["news_phase"], (("ENTER " + ("BUY" if side > 0 else "SELL")) if acted else (why2 or why)))
+                 s["news_phase"], decision)
         self._save_state()
         if not acted:
             return
         a = float(row["m5_atr"])
         sl_d, tp_d = slm * a, tpm * a
-        from config import commission_per_side
-        lots = position_size(equity, sl_d, self.info.trade_contract_size, cfg.risk.risk_per_trade_pct,
+        lots = position_size(equity / self.acct_usd, sl_d, self.info.trade_contract_size, cfg.risk.risk_per_trade_pct,
                              self.info.volume_step, self.info.volume_min, min(self.info.volume_max, cfg.instrument.max_lot),
-                             commission_per_side(cfg))
+                             commission_per_side(cfg), getattr(cfg.risk, "min_lot_max_risk_pct", 0))
         if lots <= 0:
             log.info("skip: min lot would risk more than %.2f%% of equity", cfg.risk.risk_per_trade_pct)
             return
@@ -335,17 +429,20 @@ class Runner:
             self.tg.send(f"⚠️ Order rejected: {fill.retcode} {fill.comment}")
             return
         slip = (fill.price - fill.requested) * side
-        pos = next((p for p in ex.bot_positions(self.gold) if p.ticket == fill.ticket), None)
+        pos = next((p for p in ex.bot_positions(self.gold)
+                    if p.ticket == fill.ticket or getattr(p, "identifier", None) == fill.ticket), None)
+        if pos is not None:
+            fill.ticket = pos.ticket
         sl, tp = (pos.sl, pos.tp) if pos else (fill.price - side * sl_d, fill.price + side * tp_d)
         self.risk.trades_today += 1
         if kind == "news":
             self.state["news_used"] = sorted(news_used | {int(self._event_key(s))})
         self._set_meta(fill.ticket, dict(atr=a, open_ts=time.time(), best=fill.price, side=side, kind=kind,
-                                         conf=conf, tp=tp, sl=sl, slip=slip))
+                                         conf=conf, tp=tp, sl=sl, slip=slip, eq_entry=equity))
         self.store.record_trade(ticket=fill.ticket, symbol=self.gold, side="BUY" if side > 0 else "SELL", lots=lots,
                                 open_time=datetime.now(timezone.utc).isoformat(), open_price=fill.price, sl=sl, tp=tp,
                                 spread_at_entry=spread, slippage=slip, confidence=conf, session=s["session"],
-                                reason_open=kind, mode=self.mode)
+                                reason_open=kind, mode=self.mode, features=json.dumps(x))
         self._save_state()
         self.tg.send(fmt_entry(dict(info, price=fill.price, sl=sl, tp=tp)))
         if slip > self.cfg.risk.max_slippage_pips * self.cfg.instrument.pip_size:
@@ -363,6 +460,15 @@ class Runner:
         r = self.store.conn.execute("SELECT slippage FROM trades WHERE slippage IS NOT NULL ORDER BY open_time DESC "
                                     "LIMIT 20").fetchall()
         return float(np.median([x[0] for x in r])) if len(r) >= 5 else 0.0
+
+
+def _keep_awake(on: bool):
+    """Stop Windows from sleeping while the bot runs (the screen may still turn off). Reverted on exit."""
+    if os.name != "nt":
+        return
+    import ctypes
+    ES_CONTINUOUS, ES_SYSTEM_REQUIRED = 0x80000000, 0x00000001
+    ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS | (ES_SYSTEM_REQUIRED if on else 0))
 
 
 def daily_summary(store: Store, day: str) -> str:

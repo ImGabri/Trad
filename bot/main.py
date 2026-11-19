@@ -84,9 +84,8 @@ def doctor(cfg):
         print(f"  bid {tick.bid:.2f} ask {tick.ask:.2f} spread ${tick.ask - tick.bid:.2f} | margin for "
               f"{spec['volume_min']} lot ≈ {m:.2f} {acc.currency} | ping {term.ping_last / 1000:.0f} ms")
     print(f"  server time offset UTC{conn.server_offset.total_seconds() / 3600:+.0f}")
-    for k in ("dxy", "us10y", "spx"):
-        s = conn.resolve_symbol(getattr(cfg.symbols, k), suffix)
-        print(f"  {k:6s}: {s or 'not available (feature left empty)'}")
+    for k, s in conn.resolve_context(cfg, suffix).items():
+        print(f"  {k:7s}: {s or 'not offered by this server (not used)'}")
     from datetime import datetime, timedelta, timezone
     now = datetime.now(timezone.utc)
     df = conn.rates_range(gold, "M1", now - timedelta(days=int(365.25 * 3)), now, chunk_days=90)
@@ -96,12 +95,14 @@ def doctor(cfg):
     return 0
 
 
-def prepare(cfg, years: float):
+def prepare(cfg, years: float, dukascopy: bool = True, trials: int = 120, quiet: bool = False):
     from prepare import download, research
-    print(f"Downloading up to {years:g} years of M1 history from MT5 …")
-    m1, corr = download(cfg, DATA, years)
-    research(cfg, DATA, m1, corr)
-    open_report()
+    say = logging.getLogger("prepare").info if quiet else print
+    say(f"Downloading {years:g} years of gold history (your PU Prime bars + public OANDA history for older years) …")
+    m1, corr = download(cfg, DATA, years, say=say, dukascopy_back=dukascopy)
+    research(cfg, DATA, m1, corr, say=say, trials=trials)
+    if not quiet:
+        open_report()
 
 
 def import_csv(cfg, path: str, offset: float):
@@ -119,12 +120,12 @@ def import_codex(cfg, paths):
     print("Imported. Option 2 merges this with MT5 history.")
 
 
-def run_live(cfg, mode: str, keep_running=lambda: True):
+def run_live(cfg, mode: str, keep_running=lambda: True, auto_retrain: bool = False):
     from live import Runner
     if not (DATA / "model" / "model.txt").exists():
         raise SystemExit("No AI model yet — run option 2 (prepare) first.")
     (DATA / "STOP").unlink(missing_ok=True)
-    Runner(cfg, APP, mode, keep_running).run()
+    return Runner(cfg, APP, mode, keep_running, auto_retrain).run()
 
 
 def worker():
@@ -143,9 +144,19 @@ def worker():
     status = Status(DATA / "status.json")
     while active():
         try:
-            run_live(cfg, background.read_control(APP)["mode"], active)
-            if (DATA / "STOP").exists():
+            if not (DATA / "model" / "model.txt").exists():  # started before the first training finished
+                status.update(state="retrain", detail="first-time training")
+                prepare(cfg, cfg.history.years, quiet=True)
+            why = run_live(cfg, background.read_control(APP)["mode"], active, auto_retrain=True)
+            if (DATA / "STOP").exists() or why == "killed":
                 break
+            if why == "retrain":  # weekend: learn from everything collected this week, then carry on
+                status.update(state="retrain", detail="weekly retrain on all saved data")
+                log.info("weekly retrain starting")
+                prepare(cfg, cfg.history.years, quiet=True)
+                delay = 5
+                cfg = load_config(APP / "config.yaml")
+                continue
         except SystemExit as e:
             status.update(state="waiting", detail=str(e))
         except Exception as e:  # noqa: BLE001
@@ -214,10 +225,11 @@ def smoke():
     sys.path.insert(0, str(APP / "tests"))
     from synthetic import synthetic_m1
     from prepare import research
-    cfg = load_config(APP / "config.yaml", overrides={"backtest": {"wf_window_months": 1, "holdout_months": 1}})
     out = APP / "data_smoke"
+    cfg = load_config(APP / "config.yaml", overrides={"backtest": {"wf_window_months": 1, "holdout_months": 1}},
+                      tuned_path=out / "tuned.yaml")
     m1 = synthetic_m1(days=150)
-    s = research(cfg, out, m1, {})
+    s = research(cfg, out, m1, {"_equity": 23.0}, trials=8)
     assert "holdout" in s, "smoke: no holdout section"
     print("SMOKE OK")
 
@@ -245,7 +257,7 @@ def status_screen():
 MENU = f"""
 =====  XAUUSD AI Scalper v{VERSION} — PUPrime MT5 (demo)  =====
  1  Check MT5 connection, symbols and history
- 2  Download history, train AI and backtest (opens report)
+ 2  Download history (MT5 + Dukascopy), train AI, retune rules, backtest
  3  Watch mode in this window (signals only, no orders)
  4  Demo trading in this window
  5  Background: start DEMO trading (survives closing this window / reboot+logon)
@@ -272,7 +284,7 @@ def menu():
             if ch == "1":
                 doctor(cfg)
             elif ch == "2":
-                y = input("Years of history [3]: ").strip() or "3"
+                y = input("Years of history [7]: ").strip() or "7"
                 prepare(cfg, float(y))
             elif ch in ("3", "4"):
                 print("Running — press Ctrl+C to stop.")
@@ -316,13 +328,19 @@ def cli():
     sub.add_parser("menu"); sub.add_parser("doctor"); sub.add_parser("watch"); sub.add_parser("demo")
     sub.add_parser("worker"); sub.add_parser("kill"); sub.add_parser("reset"); sub.add_parser("smoke")
     sub.add_parser("status")
-    p = sub.add_parser("prepare"); p.add_argument("--years", type=float, default=3)
+    p = sub.add_parser("prepare"); p.add_argument("--years", type=float, default=7)
+    p.add_argument("--no-dukascopy", action="store_true"); p.add_argument("--trials", type=int, default=120)
+    sub.add_parser("ui")
     p = sub.add_parser("import-csv"); p.add_argument("path"); p.add_argument("--utc-offset", type=float, default=0)
     p = sub.add_parser("import-codex"); p.add_argument("paths", nargs="+")
     p = sub.add_parser("background"); p.add_argument("action", choices=["start-demo", "start-watch", "status", "stop"])
     a = ap.parse_args()
-    if a.cmd in (None, "menu"):
+    if a.cmd == "menu":
         return menu()
+    if a.cmd in (None, "ui"):
+        cfg_and_logs(console=False)
+        import ui
+        return ui.serve()
     if a.cmd == "worker":
         return worker()
     if a.cmd == "smoke":
@@ -335,7 +353,7 @@ def cli():
     if a.cmd == "doctor":
         return doctor(cfg)
     if a.cmd == "prepare":
-        return prepare(cfg, a.years)
+        return prepare(cfg, a.years, not a.no_dukascopy, a.trials)
     if a.cmd == "import-csv":
         return import_csv(cfg, a.path, a.utc_offset)
     if a.cmd in ("watch", "demo"):

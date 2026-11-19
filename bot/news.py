@@ -1,7 +1,9 @@
 """High-impact USD event calendar (§6).
 
-Sources, merged and de-duplicated into data/calendar.csv (which grows every week the bot runs):
-  1. ForexFactory weekly JSON feed (USD, impact High)
+Sources, merged and de-duplicated:
+  0. assets/events_usd.csv — bundled, verified 2019→2026 calendar (BLS, BEA, Census, Fed, ISM official
+     schedules): NFP, CPI, PPI, FOMC statement + press conference, Retail Sales, GDP, PCE, JOLTS, ISM
+  1. ForexFactory weekly JSON feed (USD, impact High) → data/calendar.csv, grows every week the bot runs
   2. data/events_manual.csv — your own additions: columns time_utc,title  (ISO time, e.g. 2026-12-04T13:30:00Z)
   3. Historical approximation for backtests: US payrolls (first Friday, 08:30 New York) — FF only serves the
      current week, so older CPI/FOMC/etc. dates must come from the manual CSV if you want them in backtests.
@@ -74,8 +76,13 @@ def refresh_calendar(cfg, data_dir: Path) -> pd.DataFrame:
     return cal
 
 
+BUNDLED = Path(__file__).with_name("assets") / "events_usd.csv"  # verified 2019–2026 official release times
+
+
 def load_events(cfg, data_dir: Path, start=None, end=None, include_rule_based=True) -> pd.DatetimeIndex:
-    cal = pd.concat([_read(data_dir / "calendar.csv"), _read(data_dir / "events_manual.csv")])
+    cal = pd.concat([_read(BUNDLED), _read(data_dir / "calendar.csv"), _read(data_dir / "events_manual.csv")])
+    if len(_read(BUNDLED)):
+        include_rule_based = False  # the bundled calendar already has the real payroll dates
     if include_rule_based and start is not None and end is not None:
         cal = pd.concat([cal, nfp_dates(pd.Timestamp(start).date(), pd.Timestamp(end).date())])
     if cal.empty:

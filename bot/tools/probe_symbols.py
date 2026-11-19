@@ -35,8 +35,7 @@ def main():
     if tick:
         rep["gold"]["live_spread_usd"] = round(tick.ask - tick.bid, 3)
     rep["gold"]["margin_0.01_buy"] = mt5.order_calc_margin(mt5.ORDER_TYPE_BUY, gold, 0.01, tick.ask) if tick else None
-    for key in ("dxy", "us10y", "spx"):
-        rep["correlated"][key] = conn.resolve_symbol(getattr(cfg.symbols, key), suffix)
+    rep["correlated"] = conn.resolve_context(cfg, suffix)
     # anything that looks related, so we can extend the alias lists
     pats = ("USD", "DX", "10Y", "TNOTE", "BOND", "500", "SPX", "NAS", "US30", "VIX", "XAG", "XAU")
     rep["all_index_like_symbols"] = sorted(s.name for s in mt5.symbols_get()

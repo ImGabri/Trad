@@ -124,12 +124,17 @@ def compute_signals(f: pd.DataFrame, cfg, events: pd.DatetimeIndex | None = None
     out["rule_signal"] = np.where((out["bias"] != 0) & out["at_level"] & (out["trigger"] == out["bias"]),
                                   out["bias"], 0)
     out = out.join(session_state(f.index, cfg)).join(news_phase(f.index, events, cfg))
+    for col in ("session", "news_phase"):  # categoricals: ~8× smaller than Python string objects
+        out[col] = out[col].astype("category")
+    out["bias"] = out["bias"].astype(np.int8)
+    out["rule_signal"] = out["rule_signal"].astype(np.int8)
+    out["trigger"] = out["trigger"].astype(np.int8)
     return out
 
 
 def decide_entry(cfg, *, rule: int, ai_dir: int, conf: float, has_ai: bool, session: str, blocked: bool,
                  phase: str, event_id: int, news_used: set, spread_ratio: float, atr_m5: float,
-                 slippage_usd: float) -> tuple[int, float, float, str, str]:
+                 slippage_usd: float, bias: int = 0, ai_only_min_conf: float | None = None) -> tuple[int, float, float, str, str]:
     """Single source of truth for entry gating (backtest + live).
     Returns (side, sl_atr_mult, tp_atr_mult, kind, reason). side 0 = no entry, reason says why."""
     st, rk, nw = cfg.strategy, cfg.risk, cfg.news
@@ -148,11 +153,16 @@ def decide_entry(cfg, *, rule: int, ai_dir: int, conf: float, has_ai: bool, sess
                 and spread_ratio < nw.news_scalp_spread_mult):
             return int(ai_dir), nw.news_scalp_sl_atr, nw.news_scalp_tp_atr, "news", "news_scalp"
         return 0, 0, 0, "", "news_event"
-    if rule == 0:
-        return 0, 0, 0, "", "no_setup"
     thr = st.confidence_threshold
     if session == "asia":
         thr = max(thr, cfg.sessions.asia_min_confidence)
+    if rule == 0:
+        # fast mode: very confident AI may enter without the full rule setup (never against the M15 bias)
+        ai_only = getattr(st, "ai_only_min_conf", 0) if ai_only_min_conf is None else ai_only_min_conf
+        if has_ai and ai_only and ai_dir != 0 and conf >= max(ai_only, thr) and bias in (0, ai_dir):
+            slm = st.sl_atr * (nw.post_sl_mult if phase == "post" else 1.0)
+            return int(ai_dir), slm, st.tp_atr, "ai", "ai_only"
+        return 0, 0, 0, "", "no_setup"
     if ai_dir != rule:
         return 0, 0, 0, "", "ai_disagrees"
     if conf < thr:

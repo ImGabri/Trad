@@ -31,9 +31,28 @@ def _load_dotenv(path: Path) -> None:
         os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
 
-def load_config(path: str | Path | None = None, overrides: dict | None = None) -> SimpleNamespace:
+def load_config(path: str | Path | None = None, overrides: dict | None = None, use_tuned: bool = True,
+                tuned_path: str | Path | None = None) -> SimpleNamespace:
     path = Path(path or os.environ.get("XAU_CONFIG", DEFAULT_PATH))
     raw = yaml.safe_load(path.read_text())
+    data_dir = path.parent / "data"
+    tuned = Path(tuned_path) if tuned_path else data_dir / "tuned.yaml"
+    if use_tuned and tuned.exists():  # written by the optimizer
+        t = yaml.safe_load(tuned.read_text()) or {}
+        t.pop("_tuning", None)
+        _deep_update(raw, t)
+    user = data_dir / "user.yaml"  # dashboard settings — always win
+    if user.exists():
+        _deep_update(raw, yaml.safe_load(user.read_text()) or {})
+    local = data_dir / "local.json"  # machine-specific: MT5 terminal path remembered at first connect
+    if not raw["broker"].get("terminal_path") and local.exists():
+        import json
+        try:
+            tp = json.loads(local.read_text()).get("terminal_path", "")
+            if tp and Path(tp).exists():
+                raw["broker"]["terminal_path"] = tp
+        except ValueError:
+            pass
     if overrides:
         _deep_update(raw, overrides)
     _load_dotenv(path.with_name(".env"))
@@ -46,6 +65,8 @@ def load_config(path: str | Path | None = None, overrides: dict | None = None) -
         telegram_chat_id=os.environ.get("TELEGRAM_CHAT_ID"),
     )
     cfg.raw = raw
+    raw["_path"] = str(path)
+    raw["_overrides"] = overrides or {}
     return cfg
 
 

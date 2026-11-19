@@ -9,12 +9,18 @@ broker:
 
 symbols:
   primary: XAUUSD            # standard 24/5 gold, NOT XAUUSD247
-  # Candidate names tried in order; first one that exists on the server wins. Run tools/probe_symbols.py.
-  dxy:   [USDX, DXY, USDIndex, USIndex, DOLLAR_INDX, DX]
-  us10y: [US10Y, US10Y.B, UST10Y, TNOTE, "10YNOTE"]
-  spx:   [SP500, US500, SPX500, SP500ft, SPX]
-  fallback_provider: yfinance   # used when a correlated symbol is missing on MT5
-  yfinance_tickers: {dxy: "DX-Y.NYB", us10y: "^TNX", spx: "ES=F"}
+
+# Other markets fed to the AI as 1- and 5-minute % changes. `mt5`: PU Prime symbol candidates (the account
+# suffix such as ".s" is added automatically); `hf`: public 1-minute history for training on older years.
+# A market is only used when it is available both live and in training (no US 10Y symbol on PU Prime → not used).
+context:
+  dxy:    {mt5: [USDX, DXY, USDIndex, USIndex, DOLLAR_INDX], hf: ""}
+  spx:    {mt5: [SP500, US500, SPX500, SP500ft], hf: bunqi/OANDA_SPX500USD_US-SPX-500}
+  nas100: {mt5: [NAS100, USTEC, US100, NASCOMP], hf: bunqi/OANDA_NAS100USD_US-Nas-100}
+  silver: {mt5: [XAGUSD], hf: bunqi/OANDA_XAGUSD_Silver}
+  eurusd: {mt5: [EURUSD], hf: bunqi/OANDA_EURUSD_EURUSD}
+  usdjpy: {mt5: [USDJPY], hf: bunqi/OANDA_USDJPY_USDJPY}
+  wti:    {mt5: [USOUSD, USOIL, XTIUSD, CL-OIL], hf: bunqi/OANDA_WTICOUSD_West-Texas-Oil}
 
 instrument:                  # XAUUSD contract spec; live values are re-read from symbol_info
   contract_size: 100         # oz per lot -> $1 move = $100/lot
@@ -54,10 +60,23 @@ strategy:
   trail_distance_atr: 0.5
   time_stop_minutes: 15
   confidence_threshold: 0.65
+  # Equity take-profit: close a trade once it is +X % of account equity in profit — unless the AI still
+  # expects the move to continue (P(direction) >= hold_conf); then lock lock_frac of that gain with the SL
+  # and keep riding, leaving as soon as the AI stops agreeing.
+  equity_tp_pct: 1.0
+  equity_tp_hold_conf: 0.55
+  equity_tp_lock_frac: 0.5
+  # Fast mode: when > 0, the AI alone may open a trade (no rule setup needed) at this confidence or higher,
+  # never against the M15 bias. 0 = off.
+  ai_only_min_conf: 0.0
 
 risk:
+  # Small-account mode (€50 start): 0.01 lot = 1 oz, so a ~$4 stop risks ~7 % of €50. The 0.5 % rule would
+  # block every trade; when > 0 the bot may trade the minimum lot if that risks ≤ this % of equity.
+  # Lots compound automatically: above ~€800 the normal risk_per_trade_pct sizing takes over.
+  min_lot_max_risk_pct: 10
   risk_per_trade_pct: 0.5
-  daily_loss_limit_pct: 2.0
+  daily_loss_limit_pct: 15   # spec said 2 %, but one min-lot loss on €50 is ~7 % → allow ~2 losses/day
   max_concurrent: 2
   max_daily_trades: 20
   survival_multiplier: 1.5   # hard stop if equity <= (margin_0.01 + SL_loss_0.01) × this
@@ -80,6 +99,11 @@ news:
   news_scalp_tp_atr: 2.0
   post_window_min: [5, 15]   # T+5 .. T+15: SL × 1.2
   post_sl_mult: 1.2
+
+history:
+  years: 7                   # training history (broker bars + public OANDA data for older years)
+  hf_gold: bunqi/OANDA_XAUUSD_Gold          # public Hugging Face datasets (monthly parquet, 1-minute)
+  oanda_mid_to_bid: -0.16    # PU Prime bid ≈ OANDA mid − half the $0.32 spread (re-checked by the data audit)
 
 model:
   type: lightgbm             # lightgbm | xgboost
