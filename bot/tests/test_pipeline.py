@@ -145,3 +145,16 @@ def test_ensure_model_installs_pretrained(tmp_path, monkeypatch):
     assert main.ensure_model() and (tmp_path / "data" / "model" / "m15.txt").exists()
     (tmp_path / "data" / "model" / "model.txt").write_text("mine")
     assert main.ensure_model() and (tmp_path / "data" / "model" / "model.txt").read_text() == "mine"  # never overwrites
+
+
+def test_turbo_both_sells_breakdowns_without_lookahead():
+    import numpy as np, pandas as pd
+    from strategy import turbo_signal
+    idx = pd.date_range("2026-01-05", periods=60 * 24 * 6, freq="1min", tz="UTC")
+    px = 4000 - np.arange(len(idx)) * 0.02 + np.sin(np.arange(len(idx)) / 200) * 3   # steady downtrend
+    f = pd.DataFrame({"open": px, "high": px + 0.3, "low": px - 0.3, "close": px}, index=idx)
+    long_only = turbo_signal(f)
+    both = turbo_signal(f, direction="both")
+    assert (long_only == -1).sum() == 0 and (both == -1).sum() > 0
+    cut = len(idx) // 2   # appending future bars must not change past signals
+    assert turbo_signal(f.iloc[:cut], direction="both").equals(both.iloc[:cut])

@@ -156,22 +156,26 @@ STYLES = {  # one click instead of editing numbers
     "turbo": {"strategy": {"mode": "turbo"}},  # exits/risk come from the config.yaml `turbo:` section
 }
 STYLES["perfect"] = STYLES["turbo"]  # 🎯 Perfect = best backtested strategy (improved Turbo, config `turbo:` section)
+# 🎯⇅ Perfect + Sell: the same breakout, plus SELLS on a break below the 24-hour low while the hourly trend is down.
+# Backtest (€100, 1 %): 2019–23 BLOWN (−94 %), 2024–mid-25 +565 %, Aug 2025–Nov 2026 +915 %; €500: −31 / +179 / +191 %.
+STYLES["both"] = {"strategy": {"mode": "turbo", "turbo_direction": "both"}}
 BASKET_DEFAULT = {"candles_tf": "m5", "candles": 5, "follow": True, "step_atr": 0.75, "max_entries": 2, "tp_atr": 1.0,
                   "sl_atr": 6.0, "hold_minutes": 240, "equity_per_001": 50}
 STYLES["basket"] = {"strategy": {"mode": "basket"}, "basket": dict(BASKET_DEFAULT), "risk": {"max_daily_trades": 100000}}
-# ☠️ Extreme: the most trades of 432 tested "crazy" variants — fades every 2-candle M1 run, one position, tiny
-# target (0.25×ATR), 1×ATR stop, out after 15 min, 24 h, no daily cap. Backtest: ~110 trades/day, 55–72 % won,
-# about −$0.38 per 0.01-lot trade (= the spread) → €100 fell to ~€12 in every period (2020–26). Demo only.
+# ☠️ Extreme: trades WITH every 2-candle M1 run (2 falling candles → SELL, 2 rising → BUY), one position,
+# 0.5×ATR target, 1×ATR stop, out after 15 min, 24 h, no daily cap. Backtest: ~85 trades/day, 43–56 % won,
+# about −$0.42 per 0.01-lot trade (the spread) → €100 fell to ~€12 in every period (2020–26). Demo only.
 STYLES["extreme"] = {"strategy": {"mode": "basket"}, "risk": {"max_daily_trades": 100000},
                      "sessions": {"asia_enabled": True},
-                     "basket": dict(BASKET_DEFAULT, candles_tf="m1", candles=2, follow=False, step_atr=0.3, max_entries=1,
-                                    tp_atr=0.25, sl_atr=1.0, hold_minutes=15)}
-# 💀 Hyper: a new standalone trade EVERY minute (fades the last M1 candle), up to 10 open at once, each with its own
-# 0.25×ATR target / 1×ATR stop and a 15-min clock. Backtest: ~1,200 trades/day, 49–70 % won, −$0.40 per 0.01-lot
+                     "basket": dict(BASKET_DEFAULT, candles_tf="m1", candles=2, follow=True, step_atr=0.3, max_entries=1,
+                                    tp_atr=0.5, sl_atr=1.0, hold_minutes=15)}
+# 💀 Hyper: a new standalone trade EVERY minute in the direction of the last M1 candle (falling → SELL, rising → BUY),
+# up to 10 open, each with its own 0.25×ATR target / 1×ATR stop and a 15-min clock. Backtest: ~1,200 trades/day,
+# 48–69 % won, −$0.41 to −0.45 per 0.01-lot
 # trade → a €100 account is gone within the first trading day in every period (2020–26). Demo only.
 STYLES["hyper"] = {"strategy": {"mode": "basket"}, "risk": {"max_daily_trades": 100000},
                    "sessions": {"asia_enabled": True},
-                   "basket": dict(BASKET_DEFAULT, candles_tf="m1", candles=1, follow=False, independent=True, max_open=10,
+                   "basket": dict(BASKET_DEFAULT, candles_tf="m1", candles=1, follow=True, independent=True, max_open=10,
                                   tp_atr=0.25, sl_atr=1.0, hold_minutes=15, equity_per_001=1000)}
 for _k in ("active", "careful"):  # leaving Turbo/Basket restores the scalping engine
     STYLES[_k].setdefault("strategy", {}).update(mode="scalp", ai_gate=True)
@@ -204,7 +208,7 @@ def _style() -> str:
     from config import load_config
     st = load_config(APP / "config.yaml").strategy
     if str(getattr(st, "mode", "scalp")) == "turbo":
-        return "turbo"
+        return "both" if str(getattr(st, "turbo_direction", "long")) == "both" else "turbo"
     if str(getattr(st, "mode", "scalp")) == "basket":
         b = load_config(APP / "config.yaml").basket
         if getattr(b, "independent", False):
@@ -365,8 +369,9 @@ def action(name: str, body: dict) -> str:
                "careful": "Careful: only high-confidence setups.",
                "turbo": "🎯 Perfect: the best backtested strategy (hourly trend breakouts, 1 % risk). Use €100+.",
                "perfect": "🎯 Perfect: the best backtested strategy (hourly trend breakouts, 1 % risk). Use €100+.",
-               "extreme": "☠️ Extreme: ~110 trades a day (a new one every few minutes). Lost money in every backtest period.",
-               "hyper": "💀 Hyper: a new trade every minute, up to 10 open (~1,200 a day). Blew €100 within a day in every backtest.",
+               "extreme": "☠️ Extreme: ~85 trades a day, buys AND sells with the last 2 candles. Lost money in every backtest period.",
+               "both": "🎯⇅ Perfect + Sell: hourly breakouts up AND down (buys in uptrends, sells in downtrends). Use €500+.",
+               "hyper": "💀 Hyper: a trade every minute with the last candle (buys and sells), up to 10 open (~1,200 a day). Blew €100 within a day in every backtest.",
                "basket": "🧺 Basket: follows the last candles and adds legs; whole basket closes together (lost money in backtests)."}
         return msg[style] + _restart_if_running()
     if name == "test_trade":

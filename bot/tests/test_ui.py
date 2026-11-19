@@ -69,7 +69,7 @@ def test_style_presets_are_complete_and_detected(tmp_path, monkeypatch):
     ui._write_user({"risk": {"risk_per_trade_pct": 9}})                 # an old manual tweak …
     ui._write_user(ui.STYLES["perfect"], replace=True)                   # … is cleared by choosing a style
     assert "risk_per_trade_pct" not in (tmp_path / "user.yaml").read_text()
-    for style, mode, tf in (("extreme", "basket", "m1"), ("hyper", "basket", "m1"), ("basket", "basket", "m5"), ("perfect", "turbo", None)):
+    for style, mode, tf in (("extreme", "basket", "m1"), ("hyper", "basket", "m1"), ("basket", "basket", "m5"), ("perfect", "turbo", None), ("both", "turbo", None)):
         ui._write_user(ui.STYLES[style], replace=True)
         (tmp_path / "config.yaml").write_text((ROOT / "config.yaml").read_text())
         (tmp_path / "data").mkdir(exist_ok=True)
@@ -81,3 +81,4 @@ def test_style_presets_are_complete_and_detected(tmp_path, monkeypatch):
         else:
             assert cfg.strategy.sl_atr == 3.0 and cfg.strategy.tp_atr == 40.0 and not cfg.strategy.ai_gate
         assert bool(getattr(cfg.basket, "independent", False)) == (style == "hyper")
+        assert str(getattr(cfg.strategy, "turbo_direction", "long")) == ("both" if style == "both" else "long") or tf

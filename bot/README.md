@@ -28,6 +28,25 @@ tab: the bot keeps running, stops Windows from going to sleep while it trades, a
 | News | Verified 2019–2026 US calendar (NFP, CPI, PPI, FOMC, retail sales, GDP, PCE, JOLTS, ISM) plus a live ForexFactory feed. No entries 15→5 min before an event (stops tightened). One AI "news scalp" in the ±5 min window. Wider stops for 15 min after. |
 | Risk | 0.5 % per trade. Small-account mode trades 0.01 lot when that risks ≤ 10 % (a €50 start). 15 % daily loss halt, max 2 open / 20 trades a day, spread and slippage filters, survival hard stop, no averaging down, demo accounts only. |
 
+## v2.9 — buys AND sells
+
+- **☠️ Extreme and 💀 Hyper now trade with the candles.**
+  - **What changed:** they used to bet against the last candles, so on a falling chart they kept buying.
+  - **Now:** falling candles mean SELL and rising candles mean BUY.
+  - **Backtest:** still no profit. Each 0.01-lot trade loses about $0.42, and €100 ends at about €12 (Extreme) or is
+    gone within a day (Hyper).
+- **🎯⇅ Perfect + Sell** is a new style. It runs the same hourly breakout as Perfect, but it also **sells** the first
+  break below the 24-hour low while the hourly trend is down.
+
+  | Start (1 % risk) | 2019 – 2023 | 2024 – mid-2025 | Aug 2025 – Nov 2026 |
+  |---|---|---|---|
+  | €100 | **blown** (−94 %) | +565 % | +915 % |
+  | €500 | −31 % | +179 % | +191 % |
+  | €1,000 | −29 % | +162 % | +62 % |
+
+  - **How it compares:** it beat buy-only Perfect in 2025–26, but it lost money in the choppier 2019–23 years.
+    🎯 Perfect (buy-only) stays the default.
+
 ## v2.7 — 🎯 Perfect, ☠️ Extreme and 30 more markets
 
 - **🎯 Perfect** (the default style) is the best strategy found in all backtests, Turbo with its tested settings.
