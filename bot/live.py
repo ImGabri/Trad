@@ -105,7 +105,7 @@ class Runner:
         self.gold = self.conn.resolve_gold(cfg.symbols.primary)
         self.acct_usd = acct_per_usd(self.gold)
         suffix = self.gold[len(cfg.symbols.primary):]
-        self.corr = {k: self.conn.resolve_symbol(getattr(cfg.symbols, k), suffix) for k in ("dxy", "us10y", "spx")}
+        self.corr = self.conn.resolve_context(cfg, suffix)
         self.info = mt5.symbol_info(self.gold)
         self.dev_points = int(cfg.risk.max_slippage_pips * cfg.instrument.pip_size / self.info.point)
         # restore day counters if same UTC day
@@ -336,7 +336,7 @@ class Runner:
         m1 = self.conn.rates_latest(self.gold, "M1", M1_HISTORY + 1)
         corr = {}
         for k, sym in self.corr.items():
-            if sym and k in " ".join(self.model.features):
+            if sym and any(c.startswith(k + "_chg") for c in self.model.features):
                 bars = self.conn.rates_latest(sym, "M1", 300)
                 corr[k] = bars["close"] if not bars.empty else None
         now = pd.Timestamp.now(tz="UTC")
@@ -374,7 +374,9 @@ class Runner:
                 self.tg.send(f"🛑 Daily loss limit hit ({cfg.risk.daily_loss_limit_pct}%). Halted until next UTC day.")
             tick = mt5.symbol_info_tick(self.gold)
             margin = mt5.order_calc_margin(mt5.ORDER_TYPE_BUY, self.gold, self.info.volume_min, tick.ask) or 0.0
-            req = min_required_equity(tick.ask, cfg.strategy.sl_atr * row["m5_atr"], self.info.trade_contract_size,
+            atr_typ = float(row.get("m5_atr_typ", np.nan))
+            atr_typ = atr_typ if np.isfinite(atr_typ) and atr_typ > 0 else float(row["m5_atr"])
+            req = min_required_equity(tick.ask, cfg.strategy.sl_atr * atr_typ, self.info.trade_contract_size,
                                       acc.leverage or cfg.broker.leverage, self.info.volume_min, margin / self.acct_usd)
             if not self.risk.hard_stop and survival_breached(equity / self.acct_usd, req, cfg.risk.survival_multiplier):
                 ex.close_all(self.gold, self.dev_points, "survival")

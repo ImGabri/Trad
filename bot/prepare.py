@@ -42,7 +42,7 @@ def download(cfg, data_dir: Path, years: float, say=print, dukascopy_back: bool 
     now = datetime.now(timezone.utc)
     start = now - timedelta(days=int(365.25 * years))
     syms = {"gold": gold}
-    syms.update({k: conn.resolve_symbol(getattr(cfg.symbols, k), suffix) for k in ("dxy", "us10y", "spx")})
+    syms.update(conn.resolve_context(cfg, suffix))
     out = {}
     for key, sym in syms.items():
         if not sym:
@@ -72,9 +72,14 @@ def download(cfg, data_dir: Path, years: float, say=print, dukascopy_back: bool 
         raise RuntimeError(f"Only {len(gold_df):,} gold M1 bars. Check your internet connection (history download) "
                            f"or in MT5 open View → Symbols → {gold} → Bars and request more history.")
     corr = {k: v["close"] for k, v in out.items() if len(v)}
-    spx = _older_context(cfg, data_dir, corr.get("spx"), start, say)
-    if spx is not None:
-        corr["spx"] = spx
+    for key, spec in vars(cfg.context).items():
+        if not syms.get(key):
+            corr.pop(key, None)  # not tradable live on this server → never train on it
+            continue
+        if getattr(spec, "hf", ""):
+            s = _older_context(spec.hf, data_dir, corr.get(key), start, say)
+            if s is not None:
+                corr[key] = s
     corr["_equity"] = equity
     return gold_df, corr
 
@@ -101,18 +106,18 @@ def _older_history(cfg, data_dir: Path, store, mt5_df: pd.DataFrame, start: date
     return _with_dukascopy(store, mt5_df, start, say) if dukascopy_back else mt5_df
 
 
-def _older_context(cfg, data_dir: Path, broker: pd.Series | None, start: datetime, say=print) -> pd.Series | None:
-    """S&P 500 1-minute closes for the years before the broker's SP500 history (same public source)."""
+def _older_context(repo: str, data_dir: Path, broker: pd.Series | None, start: datetime, say=print) -> pd.Series | None:
+    """1-minute closes of another market for the years before the broker's own history (public source)."""
     try:
         from history import download as hf_download
         first = broker.index.min() if broker is not None and len(broker) else pd.Timestamp.now(tz="UTC")
         if first <= pd.Timestamp(start) + pd.Timedelta(days=7):
             return broker
-        mid = hf_download(cfg.history.hf_spx, data_dir / "hf_cache", start.date(), say)["close"]
+        mid = hf_download(repo, data_dir / "hf_cache", start.date(), say)["close"]
         older = mid[mid.index < first]
         return pd.concat([older, broker]).sort_index() if broker is not None else older
     except Exception as e:  # noqa: BLE001
-        say(f"  S&P 500 history unavailable ({e})")
+        say(f"  {repo} history unavailable ({e})")
         return broker
 
 

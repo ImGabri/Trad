@@ -56,3 +56,15 @@ def test_ai_keeps_the_winner_running_then_exits_when_it_stops_agreeing():
     assert len(tr) == 1 and tr.reason.iloc[0] == "equity_tp"
     assert tr.pnl.iloc[0] > 2.0, "held well past the 1 % level while the AI agreed"
     assert tr.close_time.iloc[0] == f.index[20], "left on the first bar the AI stopped agreeing"
+
+
+def test_volatility_spike_does_not_latch_the_survival_stop():
+    f, sig, entry = scenario(60)
+    f["m5_atr"] = 4.0
+    f.iloc[30:35, f.columns.get_loc("m5_atr")] = 40.0   # news spike: 10× normal volatility
+    f["m5_atr_typ"] = 4.0                              # typical (24 h median) volatility unchanged
+    entry.iloc[:] = 0
+    entry.iloc[40] = 1                                 # a normal trade after the spike
+    res = run_backtest(f, sig, cfg(), entry_signal=entry)
+    assert res["stop_reason"] is None, "a spike alone must not trigger the survival hard stop"
+    assert len(res["trades"]) == 1

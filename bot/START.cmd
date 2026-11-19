@@ -10,7 +10,8 @@ if not errorlevel 1 goto zipwarn
 rem --- first run: remove the "downloaded from the internet" mark so Windows doesn't block the bundled Python
 if not exist "data\.unblocked" (
     if not exist "data" mkdir "data"
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-ChildItem -LiteralPath '%~dp0' -Recurse -File | Unblock-File" >nul 2>&1
+    set "TRAD_DIR=%~dp0"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-ChildItem -LiteralPath $env:TRAD_DIR -Recurse -File | Unblock-File" >nul 2>&1
     echo ok> "data\.unblocked"
 )
 set PYTHONUTF8=1

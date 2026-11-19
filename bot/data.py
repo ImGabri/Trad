@@ -121,6 +121,12 @@ class MT5Connection:
                     return real
         return None
 
+    def resolve_context(self, cfg, suffix: str) -> dict[str, str | None]:
+        """{market: PU Prime symbol or None} for every market in config `context`."""
+        ctx = getattr(cfg, "context", None)
+        names = vars(ctx) if ctx is not None else {}
+        return {k: self.resolve_symbol(v.mt5, suffix) for k, v in names.items()}
+
     def resolve_gold(self, wanted: str = "XAUUSD") -> str:
         """Standard 24/5 gold with full trading rights; never the XAUUSD247 contract."""
         full = getattr(mt5, "SYMBOL_TRADE_MODE_FULL", 4)

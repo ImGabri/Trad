@@ -173,6 +173,8 @@ def build_features(m1: pd.DataFrame, cfg=None, correlated: dict[str, pd.Series] 
     h1x = pd.DataFrame({"high": h1["high"], "low": h1["low"], "adx": adx(h1, 14), "atr": h1_atr,
                         "atr_pct200": h1_atr.rolling(200, min_periods=50).rank(pct=True)})
     f = f.join(align_closed(f.index, m5x, 5, "m5_"))
+    # "typical" volatility (24 h median): the survival rule must not trip on a single news spike
+    f["m5_atr_typ"] = f["m5_atr"].rolling(1440, min_periods=60).median()
     f = f.join(align_closed(f.index, m15x, 15, "m15_"))
     f = f.join(align_closed(f.index, h1x, 60, "h1_"))
 
@@ -193,18 +195,17 @@ def build_features(m1: pd.DataFrame, cfg=None, correlated: dict[str, pd.Series] 
     else:
         f["ofi"], f["trade_dir_ratio"], f["tick_count"] = np.nan, np.nan, np.nan
 
-    # --- correlated markets: 5-minute change, aligned on closed bars
-    for name in ("dxy", "us10y", "spx"):
-        s = (correlated or {}).get(name)
-        if s is None or s.empty:
-            f[f"{name}_chg5"] = np.nan
+    # --- other markets: 1- and 5-minute % change of closed bars (no look-ahead)
+    left = pd.DataFrame(index=f.index + pd.Timedelta(minutes=1))
+    for name, s in (correlated or {}).items():
+        if s is None or len(s) == 0 or name.startswith("_"):
             continue
-        s = s[~s.index.duplicated()].sort_index()
-        chg = (s - s.shift(5)) if name == "us10y" else s.pct_change(5)  # yields in bp-ish units, others %
-        close_t = pd.DataFrame({"v": chg.values}, index=s.index + pd.Timedelta(minutes=1))
-        left = pd.DataFrame(index=f.index + pd.Timedelta(minutes=1))
-        f[f"{name}_chg5"] = pd.merge_asof(left, close_t, left_index=True, right_index=True,
-                                          direction="backward", tolerance=pd.Timedelta(minutes=10))["v"].values
+        s = s[~s.index.duplicated()].sort_index().astype(float)
+        for k in (1, 5):
+            close_t = pd.DataFrame({"v": s.pct_change(k, fill_method=None).values * 1e4},  # basis points
+                                   index=s.index + pd.Timedelta(minutes=1))
+            f[f"{name}_chg{k}"] = pd.merge_asof(left, close_t, left_index=True, right_index=True, direction="backward",
+                                                tolerance=pd.Timedelta(minutes=10))["v"].values
     # float32 halves memory (years of M1 bars); prices/spread stay float64 for exact P&L maths
     keep64 = {"open", "high", "low", "close", "spread", "vwap", "m5_swing_hi", "m5_swing_lo", "h1_high", "h1_low",
               "m15_ema_fast", "m15_ema_slow"}
@@ -219,8 +220,12 @@ MODEL_FEATURES = [
     "stoch_k", "stoch_d", "ret1", "ret5", "spread", "spread_ratio", "tick_volume", "vol_ratio",
     "ofi", "trade_dir_ratio", "hour", "dow", "min_to_event", "sess_asia", "sess_london", "sess_ny",
     "vol_regime", "trend_strength", "momentum_regime", "m5_atr", "h1_atr_pct200",
-    "dxy_chg5", "us10y_chg5", "spx_chg5",
-]
+]  # + every "<market>_chg1/_chg5" context column present (see model_columns)
+
+
+def model_columns(f: pd.DataFrame) -> list[str]:
+    ctx = [c for c in f.columns if c.endswith(("_chg1", "_chg5")) and c not in MODEL_FEATURES]
+    return [c for c in MODEL_FEATURES if c in f.columns] + sorted(ctx)
 
 
 def make_label(f: pd.DataFrame, horizon_m5_bars: int = 5) -> pd.Series:

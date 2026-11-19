@@ -28,7 +28,8 @@ def position_size(equity: float, sl_distance: float, contract_size: float, risk_
 
 def min_required_equity(price: float, sl_distance: float, contract_size: float, leverage: float,
                         min_lot: float = 0.01, margin_min_lot: float | None = None) -> float:
-    """margin for 0.01 lots + SL loss for 0.01 lots (§5 survival rule)."""
+    """margin for 0.01 lots + SL loss for 0.01 lots (§5 survival rule). Callers pass the SL distance at TYPICAL
+    volatility (24 h median ATR) so a single news spike cannot latch the hard stop."""
     margin = margin_min_lot if margin_min_lot is not None else price * contract_size * min_lot / leverage
     return margin + sl_distance * contract_size * min_lot
 

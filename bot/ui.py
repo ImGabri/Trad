@@ -315,14 +315,15 @@ def make_shortcuts():
     marker = DATA / ".shortcuts"
     if marker.exists():
         return
+    q = lambda p: str(p).replace("'", "''")  # noqa: E731 — PowerShell single-quote escaping
     pyw = Path(sys.executable).with_name("pythonw.exe")
     icon = APP / "assets" / "icon.ico"
     ps = (
         "$s=New-Object -ComObject WScript.Shell;"
         "foreach($d in @([Environment]::GetFolderPath('Desktop'),[Environment]::GetFolderPath('Programs'))){"
         "$l=$s.CreateShortcut((Join-Path $d 'XAU Scalper.lnk'));"
-        f"$l.TargetPath='{pyw}';$l.Arguments='\"{APP / 'main.py'}\" ui';$l.WorkingDirectory='{APP}';"
-        f"$l.IconLocation='{icon}';$l.Description='XAUUSD AI scalper dashboard';$l.Save()}}"
+        f"$l.TargetPath='{q(pyw)}';$l.Arguments='\"{q(APP / 'main.py')}\" ui';$l.WorkingDirectory='{q(APP)}';"
+        f"$l.IconLocation='{q(icon)}';$l.Description='XAUUSD AI scalper dashboard';$l.Save()}}"
     )
     try:
         subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps], timeout=30,

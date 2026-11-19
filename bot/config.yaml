@@ -9,12 +9,18 @@ broker:
 
 symbols:
   primary: XAUUSD            # standard 24/5 gold, NOT XAUUSD247
-  # Candidate names tried in order; first one that exists on the server wins. Run tools/probe_symbols.py.
-  dxy:   [USDX, DXY, USDIndex, USIndex, DOLLAR_INDX, DX]
-  us10y: [US10Y, US10Y.B, UST10Y, TNOTE, "10YNOTE"]
-  spx:   [SP500, US500, SPX500, SP500ft, SPX]
-  fallback_provider: yfinance   # used when a correlated symbol is missing on MT5
-  yfinance_tickers: {dxy: "DX-Y.NYB", us10y: "^TNX", spx: "ES=F"}
+
+# Other markets fed to the AI as 1- and 5-minute % changes. `mt5`: PU Prime symbol candidates (the account
+# suffix such as ".s" is added automatically); `hf`: public 1-minute history for training on older years.
+# A market is only used when it is available both live and in training (no US 10Y symbol on PU Prime → not used).
+context:
+  dxy:    {mt5: [USDX, DXY, USDIndex, USIndex, DOLLAR_INDX], hf: ""}
+  spx:    {mt5: [SP500, US500, SPX500, SP500ft], hf: bunqi/OANDA_SPX500USD_US-SPX-500}
+  nas100: {mt5: [NAS100, USTEC, US100, NASCOMP], hf: bunqi/OANDA_NAS100USD_US-Nas-100}
+  silver: {mt5: [XAGUSD], hf: bunqi/OANDA_XAGUSD_Silver}
+  eurusd: {mt5: [EURUSD], hf: bunqi/OANDA_EURUSD_EURUSD}
+  usdjpy: {mt5: [USDJPY], hf: bunqi/OANDA_USDJPY_USDJPY}
+  wti:    {mt5: [USOUSD, USOIL, XTIUSD, CL-OIL], hf: bunqi/OANDA_WTICOUSD_West-Texas-Oil}
 
 instrument:                  # XAUUSD contract spec; live values are re-read from symbol_info
   contract_size: 100         # oz per lot -> $1 move = $100/lot
@@ -97,7 +103,6 @@ news:
 history:
   years: 7                   # training history (broker bars + public OANDA data for older years)
   hf_gold: bunqi/OANDA_XAUUSD_Gold          # public Hugging Face datasets (monthly parquet, 1-minute)
-  hf_spx: bunqi/OANDA_SPX500USD_US-SPX-500
   oanda_mid_to_bid: -0.16    # PU Prime bid ≈ OANDA mid − half the $0.32 spread (re-checked by the data audit)
 
 model:

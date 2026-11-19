@@ -84,9 +84,8 @@ def doctor(cfg):
         print(f"  bid {tick.bid:.2f} ask {tick.ask:.2f} spread ${tick.ask - tick.bid:.2f} | margin for "
               f"{spec['volume_min']} lot ≈ {m:.2f} {acc.currency} | ping {term.ping_last / 1000:.0f} ms")
     print(f"  server time offset UTC{conn.server_offset.total_seconds() / 3600:+.0f}")
-    for k in ("dxy", "us10y", "spx"):
-        s = conn.resolve_symbol(getattr(cfg.symbols, k), suffix)
-        print(f"  {k:6s}: {s or 'not available (feature left empty)'}")
+    for k, s in conn.resolve_context(cfg, suffix).items():
+        print(f"  {k:7s}: {s or 'not offered by this server (not used)'}")
     from datetime import datetime, timedelta, timezone
     now = datetime.now(timezone.utc)
     df = conn.rates_range(gold, "M1", now - timedelta(days=int(365.25 * 3)), now, chunk_days=90)

@@ -54,6 +54,7 @@ def run_backtest(f: pd.DataFrame, sig: pd.DataFrame, cfg, ai_dir: pd.Series | No
     spr = f["spread"].to_numpy(float)
     spr_ratio = f["spread_ratio"].to_numpy(float)
     atr5 = f["m5_atr"].to_numpy(float)
+    atr_typ = (f["m5_atr_typ"] if "m5_atr_typ" in f else f["m5_atr"]).to_numpy(float)
     rule = (entry_signal if entry_signal is not None else sig["rule_signal"]).to_numpy(int)
     has_ai = ai_conf is not None
     conf = ai_conf.reindex(idx).fillna(0).to_numpy(float) if has_ai else np.ones(n)
@@ -211,8 +212,8 @@ def run_backtest(f: pd.DataFrame, sig: pd.DataFrame, cfg, ai_dir: pd.Series | No
                 positions.clear()
                 eq = mtm(i)
 
-        if stop_reason is None and not np.isnan(atr5[i]):
-            req = min_required_equity(c[i], st.sl_atr * atr5[i], cs, cfg.broker.leverage, ins.min_lot)
+        if stop_reason is None and not np.isnan(atr_typ[i]):
+            req = min_required_equity(c[i], st.sl_atr * atr_typ[i], cs, cfg.broker.leverage, ins.min_lot)
             if survival_breached(eq, req, rk.survival_multiplier):
                 for p in list(positions):
                     close(p, i, exit_px(p, i), "survival_hard_stop")
