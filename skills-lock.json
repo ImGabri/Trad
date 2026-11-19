@@ -637,6 +637,13 @@
       "sourceType": "github",
       "skillPath": "plugins/client-operations/skills/workflow-automation/SKILL.md",
       "computedHash": "0bbe069891c37317a4a20ab6c415a78f2e6352799c3709d6ce18bbb7e92705cc"
+    },
+    "xauusd-trading": {
+      "source": "huynguyen03dev/xauusd-trading",
+      "commit": "2001dbc9f989b9dbcf688df55bbda654d56c2666",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "4efbd0909efce316c8925be04cf73046324ebd6c99fcadfe4430f800dd02bf54"
     }
   }
 }
