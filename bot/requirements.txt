@@ -1,0 +1,13 @@
+numpy>=1.26,<3
+pandas>=2.2
+pyyaml>=6
+lightgbm>=4.3
+shap>=0.45
+scikit-learn>=1.5
+yfinance>=0.2.40          # optional fallback for correlated markets
+requests>=2.31            # Telegram + ForexFactory
+streamlit>=1.36           # optional dashboard
+jupyter>=1.0
+matplotlib>=3.8
+pytest>=8
+MetaTrader5>=5.0.45; sys_platform == "win32"

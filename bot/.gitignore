@@ -1,0 +1,4 @@
+.env
+__pycache__/
+*.db
+tools/probe_report.json
