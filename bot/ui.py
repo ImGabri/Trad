@@ -166,6 +166,13 @@ STYLES["extreme"] = {"strategy": {"mode": "basket"}, "risk": {"max_daily_trades"
                      "sessions": {"asia_enabled": True},
                      "basket": dict(BASKET_DEFAULT, candles_tf="m1", candles=2, follow=False, step_atr=0.3, max_entries=1,
                                     tp_atr=0.25, sl_atr=1.0, hold_minutes=15)}
+# 💀 Hyper: a new standalone trade EVERY minute (fades the last M1 candle), up to 10 open at once, each with its own
+# 0.25×ATR target / 1×ATR stop and a 15-min clock. Backtest: ~1,200 trades/day, 49–70 % won, −$0.40 per 0.01-lot
+# trade → a €100 account is gone within the first trading day in every period (2020–26). Demo only.
+STYLES["hyper"] = {"strategy": {"mode": "basket"}, "risk": {"max_daily_trades": 100000},
+                   "sessions": {"asia_enabled": True},
+                   "basket": dict(BASKET_DEFAULT, candles_tf="m1", candles=1, follow=False, independent=True, max_open=10,
+                                  tp_atr=0.25, sl_atr=1.0, hold_minutes=15, equity_per_001=1000)}
 for _k in ("active", "careful"):  # leaving Turbo/Basket restores the scalping engine
     STYLES[_k].setdefault("strategy", {}).update(mode="scalp", ai_gate=True)
 
@@ -200,6 +207,8 @@ def _style() -> str:
         return "turbo"
     if str(getattr(st, "mode", "scalp")) == "basket":
         b = load_config(APP / "config.yaml").basket
+        if getattr(b, "independent", False):
+            return "hyper"
         return "extreme" if str(b.candles_tf) == "m1" and int(b.candles) <= 2 else "basket"
     thr = st.confidence_threshold
     return "active" if thr <= 0.55 else "careful"
@@ -357,6 +366,7 @@ def action(name: str, body: dict) -> str:
                "turbo": "🎯 Perfect: the best backtested strategy (hourly trend breakouts, 1 % risk). Use €100+.",
                "perfect": "🎯 Perfect: the best backtested strategy (hourly trend breakouts, 1 % risk). Use €100+.",
                "extreme": "☠️ Extreme: ~110 trades a day (a new one every few minutes). Lost money in every backtest period.",
+               "hyper": "💀 Hyper: a new trade every minute, up to 10 open (~1,200 a day). Blew €100 within a day in every backtest.",
                "basket": "🧺 Basket: follows the last candles and adds legs; whole basket closes together (lost money in backtests)."}
         return msg[style] + _restart_if_running()
     if name == "test_trade":

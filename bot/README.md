@@ -43,6 +43,14 @@ tab: the bot keeps running, stops Windows from going to sleep while it trades, a
   - **Backtest:** 55–72 % of trades win, but each one loses about $0.38 on average, which is the spread. A €100
     account fell to about €12 in every period from 2020 to 2026. It is a demo experiment, and the dashboard asks you
     to confirm.
+- **💀 Hyper** is the fastest setting there is:
+  - It opens a new standalone trade every minute, betting against the last 1-minute candle.
+  - Up to 10 trades are open at once, about 1,200 trades a day around the clock.
+  - Each trade has its own 0.25 × ATR target, 1 × ATR stop and a 15-minute limit.
+  - **Backtest (64 tested variants, 2020–2026):** none made money. 49–70 % of trades win, but each one loses about
+    $0.40 on average, the spread plus slippage. That is roughly −$500 a day at 0.01 lot, so a €100 account was
+    **gone within the first trading day** in every period. It is a demo experiment, and the dashboard asks you to
+    confirm.
 - **🧺 Basket** now has unlimited trades a day, and it buys and sells.
 - **More data for the AI:**
   - **Currencies:** GBP, CHF, CAD, NZD, EUR/JPY, AUD/JPY, GBP/JPY and EUR/CHF.
