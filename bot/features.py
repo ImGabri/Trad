@@ -206,6 +206,16 @@ def build_features(m1: pd.DataFrame, cfg=None, correlated: dict[str, pd.Series] 
                                    index=s.index + pd.Timedelta(minutes=1))
             f[f"{name}_chg{k}"] = pd.merge_asof(left, close_t, left_index=True, right_index=True, direction="backward",
                                                 tolerance=pd.Timedelta(minutes=10))["v"].values
+    # gold vs silver divergence: gold's 5-min move minus the part explained by silver (rolling 1-day beta).
+    # Silver is gold's strongest same-minute co-mover (ρ≈0.73); the residual carries extra information.
+    if "silver_chg5" in f:
+        g5 = f["ret5"].astype(float) * 1e4
+        s5 = f["silver_chg5"].astype(float)
+        cov = (g5 * s5).rolling(1440, min_periods=300).mean() - g5.rolling(1440, min_periods=300).mean() * \
+            s5.rolling(1440, min_periods=300).mean()
+        var = s5.rolling(1440, min_periods=300).var(ddof=0)
+        beta = (cov / var.replace(0, np.nan)).clip(0, 2)
+        f["silver_div5"] = g5 - beta * s5
     # float32 halves memory (years of M1 bars); prices/spread stay float64 for exact P&L maths
     keep64 = {"open", "high", "low", "close", "spread", "vwap", "m5_swing_hi", "m5_swing_lo", "h1_high", "h1_low",
               "m15_ema_fast", "m15_ema_slow"}
@@ -224,7 +234,7 @@ MODEL_FEATURES = [
 
 
 def model_columns(f: pd.DataFrame) -> list[str]:
-    ctx = [c for c in f.columns if c.endswith(("_chg1", "_chg5")) and c not in MODEL_FEATURES]
+    ctx = [c for c in f.columns if (c.endswith(("_chg1", "_chg5")) or c == "silver_div5") and c not in MODEL_FEATURES]
     return [c for c in MODEL_FEATURES if c in f.columns] + sorted(ctx)
 
 

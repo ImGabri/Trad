@@ -16,6 +16,22 @@ repo root (`goldbot.py`, `engine.py`, …), which stays untouched and runnable.
 | Gold symbol / suffix detection | `resolve_gold`, alias lists | Ported into `data.py` | Done |
 | Windows runner, START.cmd, release packaging | Done | – | **Reuse**: point it at `bot/main.py` |
 
+## Self-learning loop
+
+```mermaid
+flowchart LR
+  LIVE[Live trades + ticks + predictions] --> DB[(data/xau.db — never deleted)]
+  HF[Public history cache] --> TRAIN
+  DB --> COST[Learned costs: spread by hour, real slippage]
+  DB --> TRAIN[Weekend retrain: walk-forward AI + rule optimizer]
+  COST --> TRAIN
+  TRAIN --> GATE[Meta-label gate: learns which own trades win]
+  LIVE --> GATE
+  TRAIN --> MODEL[New model — old one archived in data/models]
+  GATE --> LIVE
+  MODEL --> LIVE
+```
+
 ## Data flow
 
 ```mermaid
@@ -59,6 +75,11 @@ flowchart LR
 | `background.py`, `main.py`, `START.cmd` | ✅ | Menu launcher, Task Scheduler logon runner, kill switch, Codex data import |
 | `prepare.py` | ✅ | History download → walk-forward → backtests vs baselines → HTML report (equity, DD, monthly, SHAP) |
 | `packaging/build_windows.py` | ✅ | Self-contained zip with embedded Python 3.12 (buildable from Linux too) |
+| `ui.py` + `assets/dashboard.html` | ✅ | One-click local dashboard (127.0.0.1 only, per-session token + Host check): start/stop/kill, live account, trades, signal, settings, Telegram, MT5 auto-login |
+| `learning.py` | ✅ | Self-learning: learned spread/slippage, meta-label gate from the bot's own trades (validated before use, refit after every live trade), model archive, learning log |
+| `history.py` | ✅ | Public OANDA 1-minute history (Hugging Face) for gold + context markets, cached and extended locally |
+| `optimize.py` | ✅ | Random search over rules/exits/limits, scored by real account growth from your balance; adopted only if profitable on tune AND validation |
+| `assets/events_usd.csv` | ✅ | Verified 2019–2026 US calendar from official BLS/BEA/Census/Fed/ISM schedules (987 releases) |
 
 ## PUPrime symbols (confirmed from the Codex data, demo server PUPrime-Demo)
 
