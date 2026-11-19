@@ -23,6 +23,9 @@ except ImportError:  # pragma: no cover
 
 log = logging.getLogger(__name__)
 
+# Austria timezone (Europe/Vienna): UTC+1 winter, UTC+2 summer (DST handled by MT5 server offset)
+AUSTRIA_TZ_NAME = "Europe/Vienna"
+
 TIMEFRAMES = {"M1": "TIMEFRAME_M1", "M5": "TIMEFRAME_M5", "M15": "TIMEFRAME_M15", "H1": "TIMEFRAME_H1"}
 TF_MINUTES = {"M1": 1, "M5": 5, "M15": 15, "H1": 60}
 
@@ -86,6 +89,18 @@ class MT5Connection:
         if cfg_off != "auto":
             self.server_offset = timedelta(hours=int(cfg_off))
             return
+        
+        # Check if user wants to skip market open check for uninterrupted trading
+        if self.cfg.strategy.skip_market_open_check:
+            # Use configured offset or default Austria-appropriate offset
+            if cfg_off != "auto":
+                self.server_offset = timedelta(hours=int(cfg_off))
+            else:
+                # Default to UTC+2 for PU Prime gold, adjustable for Austria timezone
+                log.info("skip_market_open_check enabled — using default offset UTC+2")
+                self.server_offset = timedelta(hours=2)
+            return
+        
         sym = self.cfg.symbols.primary
         mt5.symbol_select(sym, True)
         tick = mt5.symbol_info_tick(sym)

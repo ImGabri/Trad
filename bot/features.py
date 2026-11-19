@@ -61,6 +61,17 @@ def stoch(df: pd.DataFrame, n=14, d=3):
     return k, k.rolling(d).mean()
 
 
+def vol_skew(s: pd.Series, n: int = 20) -> pd.Series:
+    """Vectorized volatility skew (return asymmetry) over n bars.
+    
+    Uses pandas rolling.apply with raw=True for speed.
+    Returns float32 for memory efficiency.
+    """
+    return s.rolling(n).apply(
+        lambda x: float(pd.Series(x).skew()), raw=True
+    ).astype(np.float32)
+
+
 def obv(df: pd.DataFrame) -> pd.Series:
     return (np.sign(df["close"].diff()).fillna(0) * df["tick_volume"]).cumsum()
 
@@ -74,6 +85,12 @@ def slope(s: pd.Series, n: int) -> pd.Series:
     if len(v) >= n:
         out[n - 1:] = np.convolve(v, w[::-1], mode="valid")
     return pd.Series(out, index=s.index)
+
+
+def ema_slope(s: pd.Series, n: int) -> pd.Series:
+    """EMA slope: difference between current EMA and EMA n bars ago, for faster trend direction."""
+    e = ema(s, n)
+    return e - e.shift(n)
 
 
 def session_vwap(df: pd.DataFrame, reset_hour_utc: int = 22) -> pd.Series:
@@ -244,11 +261,76 @@ def build_features(m1: pd.DataFrame, cfg=None, correlated: dict[str, pd.Series] 
     return f
 
 
+def m15_features(f: pd.DataFrame) -> pd.DataFrame:
+    """Compute 15-minute timeframe features aligned with M1 bar index.
+    
+    Uses close-time alignment: H15 bars are visible only after close.
+    Features are stamp-ed with M1 bar's OPEN time t, known at t+1min (bar close).
+    """
+    # --- 15min EMA fast/slow with slopes (bias direction)
+    if "m15_ema_fast" not in f.columns:
+        f = f.copy()
+        # EMA on M1 close tuned for ~15min equivalent (50/200 periods adapted for M1)
+        f["m15_ema_fast"] = ema(f["close"], 50)
+        f["m15_ema_slow"] = ema(f["close"], 200)
+    
+    f["m15_ema_fast_slope"] = ema_slope(f["close"], 50)
+    f["m15_ema_slow_slope"] = ema_slope(f["close"], 200)
+    
+    # --- 15min ATR (volatility for position sizing)
+    f["m15_atr"] = atr(f, n=14)
+    
+    # --- 15min momentum regime
+    f["m15_momentum"] = f["close"].pct_change(15).astype(np.float32) * 1e4
+    
+    # --- 15min volatility skew (asymmetry capture)
+    f["m15_vol_skew"] = vol_skew(f["close"], n=20).astype(np.float32)
+    
+    # --- 15min VWAP deviation (if VWAP available)
+    if "vwap" in f.columns:
+        f["vwap_dev_pct_15"] = (f["close"] - f["vwap"]).astype(np.float32) / f["vwap"].replace(0, np.nan) * 100.0
+    else:
+        f["vwap_dev_pct_15"] = np.nan
+    
+    # --- Volume-weighted 15-bar moving average (VWMA_15)
+    vwma_num_15 = (f["close"] * f["tick_volume"]).rolling(15).sum()
+    vwma_den_15 = f["tick_volume"].rolling(15).replace(0, np.nan).sum()
+    f["vwma_15"] = (vwma_num_15 / vwma_den_15).astype(np.float32).replace([np.inf, -np.inf], np.nan)
+    
+    # --- 15min return features (basis points, float32)
+    f["ret_15m"] = f["close"].pct_change(15).astype(np.float32) * 1e4
+    f["ret_45m"] = f["close"].pct_change(45).astype(np.float32) * 1e4
+    
+    # --- Microstructure features (tick-based, when available)
+    f["ofi"] = np.nan
+    f["trade_dir_ratio"] = np.nan
+    f["tick_count_15"] = f["tick_volume"].rolling(15).sum().astype(np.float32)
+    
+    # --- 15min bar range metrics
+    f["m15_range"] = (f["high"] - f["low"]).astype(np.float32)
+    f["m15_body"] = (np.sign(f["close"] - f["open"]).astype(np.float32) * (f["high"] - f["low"])).astype(np.float32)
+    
+    # --- 15min ADX (trend strength)
+    f["m15_adx"] = adx(f, n=14)
+    
+    # --- float32 optimization: keep 15min-specific features as float32 where appropriate
+    keep64_15 = {"open", "high", "low", "close", "spread", "vwap", "m5_swing_hi", "m5_swing_lo",
+                 "h1_high", "h1_low", "m15_ema_fast", "m15_ema_slow"}
+    for col in f.columns:
+        if col not in keep64_15 and f[col].dtype == np.float64:
+            f[col] = f[col].astype(np.float32)
+    
+    return f
+
+
 MODEL_FEATURES = [
     "rsi14", "macd", "macd_sig", "macd_hist", "atr1", "bb_pctb", "vwap_dev_atr", "obv_slope", "adx1",
     "stoch_k", "stoch_d", "ret1", "ret5", "spread", "spread_ratio", "tick_volume", "vol_ratio",
     "ofi", "trade_dir_ratio", "hour", "dow", "min_to_event", "sess_asia", "sess_london", "sess_ny",
     "vol_regime", "trend_strength", "momentum_regime", "m5_atr", "h1_atr_pct200",
+    # 15min-enhanced features for real-time AI interpretation
+    "m15_ema_fast_slope", "m15_ema_slow_slope", "m15_atr", "m15_momentum", "m15_vol_skew",
+    "vwap_dev_pct_15", "vwma_15", "ret_15m", "ret_45m", "m15_range", "m15_body", "m15_adx",
 ]  # + every "<market>_chg1/_chg5" context column present (see model_columns)
 
 

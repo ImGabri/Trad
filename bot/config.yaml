@@ -71,6 +71,10 @@ strategy:
   # never against the M15 bias. 0 = off.
   ai_only_min_conf: 0.0
 
+  # === Continuous Trading Options ===
+  skip_market_open_check: false  # When true, bot trades uninterrupted skipping market open/close checks
+                           # Useful for 24/7 AI interpretation based on Austria timezone
+
 risk:
   # Small-account mode (€50 start): 0.01 lot = 1 oz, so a ~$4 stop risks ~7 % of €50. The 0.5 % rule would
   # block every trade; when > 0 the bot may trade the minimum lot if that risks ≤ this % of equity.

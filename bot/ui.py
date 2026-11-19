@@ -33,6 +33,7 @@ USER_KEYS = {  # settings the dashboard may change (written to data/user.yaml, w
     "daily_loss_limit_pct": ("risk", float, 1, 100),
     "max_daily_trades": ("risk", int, 1, 500),
     "asia_enabled": ("sessions", bool, None, None),
+    "skip_market_open_check": ("strategy", bool, None, None),
 }
 
 
@@ -279,7 +280,12 @@ class Handler(BaseHTTPRequestHandler):
     token = secrets.token_urlsafe(24)
     last_seen = time.time()
     live_state: dict = dict(ai_conf=None, ai_dir=None, rule_signal=None, session=None,
-                              spread_ratio=None, atr_m5=None, entry_blocked=False)
+                              spread_ratio=None, atr_m5=None, entry_blocked=False,
+                              # 15min AI interpretation features
+                              m15_ema_fast_slope=None, m15_ema_slow_slope=None,
+                              m15_atr=None, m15_momentum=None, m15_vol_skew=None,
+                              vwap_dev_pct_15=None, vwma_15=None,
+                              ret_15m=None, ret_45m=None, m15_range=None, m15_body=None, m15_adx=None)
 
     def log_message(self, *a):  # silence default stderr logging (pythonw has no console)
         pass

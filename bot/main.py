@@ -360,7 +360,12 @@ def cli():
             import json as _json
             state_data = dict(ai_conf=None, ai_dir=None, rule_signal=None,
                               session=None, spread_ratio=None, atr_m5=None,
-                              entry_blocked=False, status="complete")
+                              entry_blocked=False, status="complete",
+                              # 15min AI interpretation features
+                              m15_ema_fast_slope=None, m15_ema_slow_slope=None,
+                              m15_atr=None, m15_momentum=None, m15_vol_skew=None,
+                              vwap_dev_pct_15=None, vwma_15=None,
+                              ret_15m=None, ret_45m=None, m15_range=None, m15_body=None, m15_adx=None)
             (APP / "data" / "state_live.json").write_text(_json.dumps(state_data, indent=2))
         except Exception:
             pass
