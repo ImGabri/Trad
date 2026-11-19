@@ -126,8 +126,25 @@ def import_codex(cfg, paths):
     print("Imported. Option 2 merges this with MT5 history.")
 
 
+def ensure_model() -> bool:
+    """Instant start: if no model has been trained on this PC yet, install the pre-trained models shipped with
+    the release (trained on 2019–2026 gold history). The first weekend retrain replaces them with your own."""
+    import shutil
+    dst, src = DATA / "model", APP / "assets" / "pretrained"
+    if (dst / "model.txt").exists():
+        return True
+    if not (src / "model.txt").exists():
+        return False
+    dst.mkdir(parents=True, exist_ok=True)
+    for p in src.iterdir():
+        shutil.copyfile(p, dst / p.name)
+    logging.getLogger("main").info("installed pre-trained models — trading can start immediately")
+    return True
+
+
 def run_live(cfg, mode: str, keep_running=lambda: True, auto_retrain: bool = False):
     from live import Runner
+    ensure_model()
     if not (DATA / "model" / "model.txt").exists():
         raise SystemExit("No AI model yet — run option 2 (prepare) first.")
     if (DATA / "STOP").exists():
@@ -151,7 +168,7 @@ def worker():
     status = Status(DATA / "status.json")
     while active():
         try:
-            if not (DATA / "model" / "model.txt").exists():  # started before the first training finished
+            if not ensure_model():  # no bundled models and none trained yet
                 status.update(state="retrain", detail="first-time training")
                 prepare(cfg, cfg.history.years, quiet=True)
             why = run_live(cfg, background.read_control(APP)["mode"], active, auto_retrain=True)

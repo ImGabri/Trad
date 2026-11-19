@@ -24,8 +24,8 @@ TOP_FILES = ["START.cmd", "MENU.cmd", "VERSION", "config.yaml", "requirements.tx
 def app_files() -> list[str]:
     """Everything the app needs: all modules, assets, tests (self-test), tools — never data/ or dist/."""
     files = TOP_FILES + sorted(p.name for p in BOT.glob("*.py"))
-    for sub, pat in (("assets", "*"), ("tests", "*.py"), ("tools", "*.py")):
-        files += sorted(f"{sub}/{p.name}" for p in (BOT / sub).glob(pat) if p.is_file())
+    for sub, pat in (("assets", "**/*"), ("tests", "*.py"), ("tools", "*.py")):
+        files += sorted(p.relative_to(BOT).as_posix() for p in (BOT / sub).glob(pat) if p.is_file())
     return files
 
 

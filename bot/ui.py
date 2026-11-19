@@ -214,7 +214,8 @@ def _start_bot(mode: str) -> str:
     import background
     if (DATA / "STOP").exists():
         return "Kill switch active. Review it before using Reset safety stops."
-    if not (DATA / "model" / "model.txt").exists():
+    from main import ensure_model
+    if not ensure_model():  # no bundled models (source checkout): train first
         ok = JOB.start("First-time setup: downloading history, training the AI, tuning the rules",
                        ["prepare"], after=lambda rc: rc == 0 and background.start(APP, mode))
         return "Setting up (first time only) — the bot starts by itself when training is done." if ok else "Busy."

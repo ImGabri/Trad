@@ -192,7 +192,8 @@ class Runner:
         trained = pd.Timestamp(self.model.meta.get("trained_at", "2000-01-01"))
         age_days = (pd.Timestamp.now(tz="UTC") - trained.tz_convert("UTC") if trained.tzinfo else
                     pd.Timestamp.now() - trained).days
-        return closed and age_days >= self.cfg.model.retrain_every_days and not ex.bot_positions(self.gold)
+        due = age_days >= self.cfg.model.retrain_every_days or bool(self.model.meta.get("pretrained"))
+        return closed and due and not ex.bot_positions(self.gold)
 
     def _ai_favours(self, side: int) -> bool:
         a = self.last_ai
