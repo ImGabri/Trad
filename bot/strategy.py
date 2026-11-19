@@ -54,10 +54,11 @@ def m1_trigger(f: pd.DataFrame, cfg) -> pd.Series:
         up, dn = up & rising, dn & rising
     # VOLUME CONFIRMATION: require above-median volume for trend triggers
     vol_med = f["tick_volume"].rolling(20).median()
-    high_vol = f["tick_volume"] > vol_med * cfg.strategy.vol_confirm_mult
+    high_vol = f["tick_volume"] > vol_med * getattr(cfg.strategy, "vol_confirm_mult", 1.0)
     # only apply volume filter when bias is non-zero (trend-seeking)
-    up = up & (cfg.strategy.vol_confirm_mult <= 1.0 | high_vol)
-    dn = dn & (cfg.strategy.vol_confirm_mult <= 1.0 | high_vol)
+    vol_ok = high_vol if getattr(cfg.strategy, "vol_confirm_mult", 1.0) > 1.0 else True
+    up = up & vol_ok
+    dn = dn & vol_ok
     
     # --- 15min trend filter: align M1 trigger with 15min bias
     # If 15min EMA slope is available, use it to filter fakeouts
