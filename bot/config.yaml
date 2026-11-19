@@ -1,0 +1,105 @@
+# XAUUSD scalper configuration. Secrets (MT5 password, Telegram token) live in .env, never here.
+
+broker:
+  server: ""                 # e.g. "PUPrime-Demo" — filled from MT5_SERVER in .env if blank
+  terminal_path: ""          # only if several MT5 terminals are installed, e.g. "C:/Program Files/PU Prime MT5 Terminal/terminal64.exe"
+  server_utc_offset_hours: auto   # "auto" = detect from live tick time; or an integer (PUPrime is usually +2/+3)
+  account_type: STANDARD     # STANDARD (no commission, ~$0.32 spread, symbols end in .s) | ECN ($1/side/lot) | PRIME ($3.5/side/lot)
+  leverage: 500              # used for margin estimates in backtest; live uses order_calc_margin
+
+symbols:
+  primary: XAUUSD            # standard 24/5 gold, NOT XAUUSD247
+  # Candidate names tried in order; first one that exists on the server wins. Run tools/probe_symbols.py.
+  dxy:   [USDX, DXY, USDIndex, USIndex, DOLLAR_INDX, DX]
+  us10y: [US10Y, US10Y.B, UST10Y, TNOTE, "10YNOTE"]
+  spx:   [SP500, US500, SPX500, SP500ft, SPX]
+  fallback_provider: yfinance   # used when a correlated symbol is missing on MT5
+  yfinance_tickers: {dxy: "DX-Y.NYB", us10y: "^TNX", spx: "ES=F"}
+
+instrument:                  # XAUUSD contract spec; live values are re-read from symbol_info
+  contract_size: 100         # oz per lot -> $1 move = $100/lot
+  pip_size: 0.10             # spec: 5–30 pips = $0.5–$3.0
+  min_lot: 0.01
+  lot_step: 0.01
+  max_lot: 5.0
+
+sessions:                    # all times UTC
+  week_open:  {day: 6, time: "22:00"}   # Sunday (Mon=0 … Sun=6)
+  week_close: {day: 4, time: "22:00"}   # Friday
+  no_entry_windows:
+    - {day: 4, start: "21:00", end: "22:00"}   # Friday pre-close
+    - {day: 6, start: "21:00", end: "22:00"}   # Sunday reopen (pre-open)
+    - {day: 6, start: "22:00", end: "23:00"}   # Sunday post-reopen spread widening
+  flat_by: {day: 4, time: "21:00"}            # flatten everything Friday 21:00
+  london:  ["07:00", "16:00"]
+  newyork: ["13:00", "21:00"]
+  asia:    ["00:00", "07:00"]
+  asia_min_confidence: 0.75  # Asia: only enter when AI confidence is high
+  asia_enabled: true
+
+strategy:
+  m15_ema_fast: 50
+  m15_ema_slow: 200
+  m15_slope_lookback: 3
+  m15_adx_min: 20
+  level_tolerance_atr: 0.25  # price within this × ATR(M5) of a key level
+  fib_levels: [0.618, 0.786]
+  fib_swing_bars_m5: 48      # swing range for fib levels (4h of M5)
+  m1_trigger_bars: 3         # consecutive M1 candles in bias direction
+  require_rising_volume: true
+  atr_period: 14
+  tp_atr: 1.5
+  sl_atr: 1.0
+  trail_trigger_atr: 1.0
+  trail_distance_atr: 0.5
+  time_stop_minutes: 15
+  confidence_threshold: 0.65
+
+risk:
+  risk_per_trade_pct: 0.5
+  daily_loss_limit_pct: 2.0
+  max_concurrent: 2
+  max_daily_trades: 20
+  survival_multiplier: 1.5   # hard stop if equity <= (margin_0.01 + SL_loss_0.01) × this
+  spread_filter_mult: 2.0    # no entry if spread > mult × 20-bar avg
+  spread_avg_bars: 20
+  max_slippage_pips: 3
+  allow_averaging_down: false
+
+news:
+  provider: forexfactory     # forexfactory JSON feed or a CSV exported from MT5 calendar (see README)
+  ff_url: "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
+  currencies: [USD]
+  keywords: [Non-Farm, NFP, CPI, FOMC, Federal Funds, PPI, Retail Sales, GDP]
+  pre_block_min: [15, 5]     # T-15 .. T-5: no entries, tighten SL
+  pre_tighten_sl_atr: 0.5
+  event_window_min: 5        # T-5 .. T+5: news scalp only
+  news_scalp_min_conf: 0.75
+  news_scalp_spread_mult: 1.5
+  news_scalp_sl_atr: 1.5
+  news_scalp_tp_atr: 2.0
+  post_window_min: [5, 15]   # T+5 .. T+15: SL × 1.2
+  post_sl_mult: 1.2
+
+model:
+  type: lightgbm             # lightgbm | xgboost
+  label_horizon_m5_bars: 5   # direction of close 25 min ahead
+  retrain_every_days: 7
+  train_window_days: 1095    # 3 years rolling
+  drift_window_trades: 50
+  drift_tolerance_pct: 15
+
+backtest:
+  spread_cost: 0.32          # $ per oz, used only when a bar has no spread data (PUPrime Standard ≈ 0.32, ECN ≈ 0.10)
+  commission_per_side_per_lot: 1.0
+  slippage_pips: 2
+  initial_equity: 10000
+  wf_train_frac: 0.70
+  wf_window_months: 3
+  holdout_months: 3
+
+monitoring:
+  log_dir: "data/logs"       # relative to the app folder (or absolute, e.g. C:/bots/logs)
+  log_retention_days: 7
+  reconnect_interval_s: 30
+  reconnect_timeout_s: 600

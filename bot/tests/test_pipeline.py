@@ -1,0 +1,120 @@
+import sys
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "tests"))
+
+from backtest import holdout_range, run_backtest, run_with_baselines, summary_table, walk_forward_windows  # noqa: E402
+from config import load_config  # noqa: E402
+from data import Store, tick_microstructure  # noqa: E402
+from features import align_closed, build_features, make_label, resample  # noqa: E402
+from risk import min_required_equity, position_size  # noqa: E402
+from strategy import compute_signals, news_phase, session_state  # noqa: E402
+from synthetic import synthetic_m1  # noqa: E402
+
+
+@pytest.fixture(scope="module")
+def cfg():
+    return load_config(ROOT / "config.yaml")
+
+
+@pytest.fixture(scope="module")
+def m1():
+    return synthetic_m1(days=21)
+
+
+@pytest.fixture(scope="module")
+def feats(m1, cfg):
+    return build_features(m1, cfg)
+
+
+def test_htf_alignment_has_no_lookahead(m1):
+    m5 = resample(m1, 5)
+    al = align_closed(m1.index, m5[["close"]], 5, "m5_")
+    t = m1.index[1000]
+    seen = al.loc[t, "m5_close"]
+    # the M5 bar visible at M1 bar t must have closed by t+1min
+    src_open = m5.index[m5["close"] == seen][0]
+    assert src_open + pd.Timedelta(minutes=5) <= t + pd.Timedelta(minutes=1)
+
+
+def test_label_horizon(feats):
+    y = make_label(feats, 5)
+    assert y.iloc[:-25].notna().all() and y.iloc[-25:].isna().all()
+
+
+def test_position_sizing_and_survival():
+    # $10k, SL $3 -> risk $50 -> 50/(3*100+2) = 0.16 lots
+    assert position_size(10_000, 3.0, 100, 0.5, commission_per_side=1.0) == 0.16
+    # tiny account: 0.01 lot would risk more than 0.5% -> skip
+    assert position_size(200, 3.0, 100, 0.5) == 0.0
+    req = min_required_equity(3000, 3.0, 100, 500)
+    assert req == pytest.approx(3000 * 100 * 0.01 / 500 + 3.0)
+
+
+def test_sessions(cfg):
+    idx = pd.DatetimeIndex(["2025-03-07 21:30", "2025-03-07 20:00", "2025-03-09 22:30", "2025-03-10 08:00"], tz="UTC")
+    s = session_state(idx, cfg)
+    assert s["entry_blocked"].tolist() == [True, False, True, False]
+    assert s["must_flat"].iloc[0] and s["session"].iloc[3] == "london"
+
+
+def test_news_phases(cfg):
+    ev = pd.DatetimeIndex(["2025-03-07 13:30"], tz="UTC")
+    # decision at bar close = index + 1 min
+    idx = pd.DatetimeIndex(["2025-03-07 13:14", "2025-03-07 13:27", "2025-03-07 13:40", "2025-03-07 14:00"], tz="UTC")
+    p = news_phase(idx, ev, cfg)["news_phase"].tolist()
+    assert p == ["pre", "event", "post", "none"]
+
+
+def test_backtest_runs_and_respects_limits(feats, cfg):
+    sig = compute_signals(feats, cfg)
+    res = run_backtest(feats, sig, cfg)
+    tr = res["trades"]
+    m = res["metrics"]
+    assert np.isfinite(m["final_equity"])
+    if len(tr):
+        assert tr.groupby(tr.open_time.dt.floor("D")).size().max() <= cfg.risk.max_daily_trades
+        assert tr.hold_min.max() <= cfg.strategy.time_stop_minutes
+        assert (tr.lots >= 0.01).all()
+        # never more than max_concurrent overlapping
+        ev = pd.concat([pd.Series(1, tr.open_time), pd.Series(-1, tr.close_time + pd.Timedelta(minutes=1))]).sort_index()
+        assert ev.cumsum().max() <= cfg.risk.max_concurrent
+        # no open position after Friday 21:00
+        fri = tr.close_time[(tr.close_time.dt.dayofweek == 4) & (tr.close_time.dt.hour >= 21)]
+        assert (fri.dt.hour * 60 + fri.dt.minute <= 21 * 60).all()
+
+
+def test_baselines(feats, cfg):
+    sig = compute_signals(feats, cfg)
+    res = run_with_baselines(feats, sig, cfg)
+    tab = summary_table(res)
+    assert set(tab.index) == {"strategy", "ema_cross", "random", "buy_and_hold"}
+
+
+def test_walk_forward(m1):
+    idx = pd.date_range("2022-01-01", "2025-12-31", freq="D", tz="UTC")
+    folds = list(walk_forward_windows(idx))
+    ho_start, _ = holdout_range(idx)
+    assert folds and all(te_end <= ho_start for *_, te_end in folds)
+    assert all(tr_end == te_start for _, tr_end, te_start, _ in folds)
+
+
+def test_store_roundtrip(tmp_path, m1):
+    st = Store(tmp_path / "x.db")
+    st.save_bars("XAUUSD", "M1", m1.iloc[:500])
+    back = st.load_bars("XAUUSD", "M1")
+    assert len(back) == 500 and back.index[0] == m1.index[0]
+
+
+def test_tick_microstructure():
+    idx = pd.date_range("2025-03-03 08:00", periods=120, freq="1s", tz="UTC")
+    bid = 2900 + np.cumsum(np.r_[0, np.ones(119) * 0.01])
+    t = pd.DataFrame({"bid": bid, "ask": bid + 0.1}, index=idx)
+    mic = tick_microstructure(t)
+    assert mic["trade_dir_ratio"].iloc[-1] == 1.0 and mic["ofi"].iloc[0] > 0
