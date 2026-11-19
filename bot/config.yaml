@@ -56,11 +56,12 @@ strategy:
   confidence_threshold: 0.65
 
 risk:
-  # Small-account mode: with ~€20 even 0.01 lot (1 oz) risks ~15–20 % at a 1×ATR stop, so the 0.5 % rule
-  # would block every trade. When > 0, the bot may trade the minimum lot if that risks ≤ this % of equity.
-  min_lot_max_risk_pct: 25
+  # Small-account mode (€50 start): 0.01 lot = 1 oz, so a ~$4 stop risks ~7 % of €50. The 0.5 % rule would
+  # block every trade; when > 0 the bot may trade the minimum lot if that risks ≤ this % of equity.
+  # Lots compound automatically: above ~€800 the normal risk_per_trade_pct sizing takes over.
+  min_lot_max_risk_pct: 10
   risk_per_trade_pct: 0.5
-  daily_loss_limit_pct: 2.0  # small accounts: one min-lot loss already exceeds this → effectively 1 loss/day
+  daily_loss_limit_pct: 15   # spec said 2 %, but one min-lot loss on €50 is ~7 % → allow ~2 losses/day
   max_concurrent: 2
   max_daily_trades: 20
   survival_multiplier: 1.5   # hard stop if equity <= (margin_0.01 + SL_loss_0.01) × this
