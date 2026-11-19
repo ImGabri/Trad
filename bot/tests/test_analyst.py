@@ -90,3 +90,23 @@ def test_m15_features_do_not_change_when_the_future_changes():
     cols = [c for c in x_full.columns if c != "close"]
     a, b = x_full.loc[t, cols].astype(float), x_cut.loc[t, cols].astype(float)
     assert np.allclose(a.fillna(-9), b.fillna(-9), rtol=1e-4, atol=1e-4), (a - b)[~np.isclose(a, b)]
+
+
+def test_turbo_mode_signal_and_gate(tmp_path, monkeypatch):
+    from config import load_config
+    from strategy import compute_signals, decide_entry, turbo_signal
+    import ui
+    m1 = synthetic_m1(days=20)
+    s = turbo_signal(m1)
+    assert set(s.unique()) <= {0, 1} and s.sum() > 0
+    hrs = s[s == 1].index.floor("60min")
+    assert not hrs.duplicated().any()                      # at most one entry per hour
+    cfg = load_config(ROOT / "config.yaml", use_tuned=False, overrides=ui.STYLES["turbo"])
+    sig = compute_signals(m1.assign(**{c: 0.0 for c in ()}).pipe(lambda d: __import__("features").build_features(d, cfg)), cfg)
+    assert (sig["rule_signal"] >= 0).all()                 # long-only
+    base = dict(rule=1, ai_dir=-1, conf=0.5, has_ai=True, session="london", blocked=False, phase="none", event_id=-1,
+                news_used=set(), spread_ratio=1.0, atr_m5=4.0, slippage_usd=0.0, bias=-1)
+    assert decide_entry(cfg, **base)[0] == 1               # AI gate off in Turbo: the breakout alone decides
+    monkeypatch.setattr(ui, "DATA", tmp_path)
+    ui._write_user(ui.STYLES["turbo"])
+    assert "mode: turbo" in (tmp_path / "user.yaml").read_text()

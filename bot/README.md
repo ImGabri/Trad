@@ -28,6 +28,30 @@ tab: the bot keeps running, stops Windows from going to sleep while it trades, a
 | News | Verified 2019–2026 US calendar (NFP, CPI, PPI, FOMC, retail sales, GDP, PCE, JOLTS, ISM) plus a live ForexFactory feed. No entries 15→5 min before an event (stops tightened). One AI "news scalp" in the ±5 min window. Wider stops for 15 min after. |
 | Risk | 0.5 % per trade. Small-account mode trades 0.01 lot when that risks ≤ 10 % (a €50 start). 15 % daily loss halt, max 2 open / 20 trades a day, spread and slippage filters, survival hard stop, no averaging down, demo accounts only. |
 
+## 🚀 Turbo — the fastest €50 growth found
+
+Research on 7.9 years of data tested about 4,000 variants of 1-minute and 15-minute scalping, your dip-buying
+basket, session breakouts, news momentum and trend-following. Each method then ran a "€50 race": 150 random
+30-day windows (2024–26), compounding from €50 with real Standard costs.
+
+| Method | Doubled €50 within 30 days | Blown | Average after 30 days |
+|---|---|---|---|
+| **🚀 Turbo (hourly trend breakout, wide stops)** | **37–40 %** | **≤ 2 %** | **+36 to +52 %** |
+| Dip-buying basket (your manual style) | 0 % | 100 % | −83 % |
+| 15-min scalping | 0 % | 6 % | −21 % |
+| Default scalping rules | 0 % | 2 % | −27 % |
+
+How Turbo trades:
+- **Entry:** buys when gold breaks above the highest price of the last 24 hours, only while the hourly trend is up.
+- **Position:** one trade at a time.
+- **Exits:** a wide stop that trails behind a winning trade, with a hold of up to 10 hours.
+
+Caveats:
+- **It depends on the bull market:** it is long-only, and its edge came from gold's 2024–25 uptrend. In a falling
+  market it mostly sits out or loses small.
+- **One full stop-loss can cost up to about half of a €50 account.**
+- **Switching it on:** press 🚀 Turbo in the dashboard. Active or Careful switch back to scalping.
+
 ## Market analyst — "what happens next?"
 
 * **15-minute chart model:** it reads the 15-minute chart (trend, momentum, volatility, where price sits in the

@@ -62,6 +62,8 @@ strategy:   # defaults tuned for a €50 PU Prime Standard account (least-losing
   trail_trigger_atr: 0.5
   trail_distance_atr: 0.75
   time_stop_minutes: 20
+  mode: scalp                # scalp (rules + AI) | turbo (hourly trend breakout — dashboard 🚀 Turbo)
+  ai_gate: true
   confidence_threshold: 0.5   # "Active" demo style: trade every rule setup the AI agrees with (Careful = 0.65)
   # Equity take-profit: close a trade once it is +X % of account equity in profit — unless the AI still
   # expects the move to continue (P(direction) >= hold_conf); then lock lock_frac of that gain with the SL

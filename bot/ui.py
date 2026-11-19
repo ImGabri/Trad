@@ -153,7 +153,14 @@ STYLES = {  # one click instead of editing numbers
                "sessions": {"asia_min_confidence": 0.55}},
     "careful": {"strategy": {"confidence_threshold": 0.65, "ai_only_min_conf": 0.0},
                 "sessions": {"asia_min_confidence": 0.75}},
+    # 🚀 Turbo — winner of the €50 race (150 random 30-day windows 2024–26): doubled €50 in 40 %, blown 1–2 %
+    "turbo": {"strategy": {"mode": "turbo", "ai_gate": False, "sl_atr": 6.0, "tp_atr": 30.0, "trail_trigger_atr": 8.0,
+                           "trail_distance_atr": 6.0, "time_stop_minutes": 600, "equity_tp_pct": 0.0, "ai_only_min_conf": 0.0},
+              "risk": {"min_lot_max_risk_pct": 70, "max_concurrent": 1, "daily_loss_limit_pct": 30, "survival_multiplier": 1.0},
+              "analyst": {"veto_conf": 0.0}},
 }
+for _k in ("active", "careful"):  # leaving Turbo restores the scalping engine
+    STYLES[_k].setdefault("strategy", {}).update(mode="scalp", ai_gate=True)
 
 
 def _trades(limit: int = 15) -> tuple[list, list]:
@@ -181,7 +188,10 @@ def _trades(limit: int = 15) -> tuple[list, list]:
 
 def _style() -> str:
     from config import load_config
-    thr = load_config(APP / "config.yaml").strategy.confidence_threshold
+    st = load_config(APP / "config.yaml").strategy
+    if str(getattr(st, "mode", "scalp")) == "turbo":
+        return "turbo"
+    thr = st.confidence_threshold
     return "active" if thr <= 0.55 else "careful"
 
 
@@ -338,8 +348,10 @@ def action(name: str, body: dict) -> str:
         if style not in STYLES:
             return "Unknown style."
         _write_user(STYLES[style])
-        return ("Active: trades every setup the AI agrees with." if style == "active"
-                else "Careful: only high-confidence setups.") + _restart_if_running()
+        msg = {"active": "Active: trades every setup the AI agrees with.",
+               "careful": "Careful: only high-confidence setups.",
+               "turbo": "🚀 Turbo: hourly trend breakouts, wide stops — best €50 growth in testing (high risk per trade)."}
+        return msg[style] + _restart_if_running()
     if name == "test_trade":
         return ("Placing a 0.01-lot test trade on your demo…" if JOB.start("Test trade on your demo account",
                                                                             ["test-trade"]) else "Busy.")

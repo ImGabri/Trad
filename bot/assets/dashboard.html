@@ -78,7 +78,7 @@ details summary{cursor:pointer;font-weight:700;color:var(--mute);list-style:none
     <div class="status">
       <div class="big" id="headline">Loading…</div><div class="sub" id="subline"></div>
       <div class="seg" id="modeSeg"><button data-v="demo" onclick="setMode('demo')">Demo trading</button><button data-v="watch" onclick="setMode('watch')">Watch only</button></div>
-      <div class="seg" id="styleSeg"><button data-v="active" onclick="act('style',{style:'active'})">⚡ Active</button><button data-v="careful" onclick="act('style',{style:'careful'})">🛡 Careful</button></div>
+      <div class="seg" id="styleSeg"><button data-v="active" onclick="act('style',{style:'active'})">⚡ Active</button><button data-v="careful" onclick="act('style',{style:'careful'})">🛡 Careful</button><button data-v="turbo" onclick="if(confirm('Turbo: hourly trend breakouts with wide stops. In testing it doubled €50 in 40% of 30-day periods (blown 1–2%), but one full stop-loss can cost up to half the account. Switch?'))act('style',{style:'turbo'})">🚀 Turbo</button></div>
     </div>
     <div class="money"><div class="l">Equity</div><div class="n" id="equity">–</div>
       <div class="l" style="margin-top:6px">Today</div><div class="d" id="today">–</div></div>
