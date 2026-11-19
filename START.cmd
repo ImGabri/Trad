@@ -1,6 +1,11 @@
 @echo off
 setlocal
 cd /d "%~dp0"
+if /i "%~1"=="legacy" goto legacy
+if not exist "bot\START.cmd" goto legacy
+call "%~dp0bot\START.cmd"
+exit /b %errorlevel%
+:legacy
 if exist "runtime\python.exe" (
     "runtime\python.exe" goldbot.py menu
     if errorlevel 1 pause

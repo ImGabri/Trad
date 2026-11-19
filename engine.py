@@ -205,6 +205,8 @@ def loop(conn,cfg,model,folder,journal,orders_enabled,active=None):
     bars, events, hist, market = None, None, None, None
     service_at = refresh_at = 0.
     refresh = None
+    heartbeat_at = 0.0
+    last_decision = None
     blocked = ""
     states = journal.state()
     mode = "demo orders" if orders_enabled else "watch"
@@ -269,6 +271,7 @@ def loop(conn,cfg,model,folder,journal,orders_enabled,active=None):
                             signal = score(model,row,states,s)
                             news = bool(event_mask(row.index,events,s)[0])
                             why = "scheduled news window" if news else blocked
+                            last_decision = dict(time_utc=broker.utc(int(row.index[-1])).isoformat(), side=signal["side"], score=signal["score"], blocked=why)
                             emit(folder,"quote_decision",mode="demo" if orders_enabled else "watch",blocked=why,**signal)
                             if signal["direction"] and not why:
                                 if orders_enabled:
@@ -280,4 +283,13 @@ def loop(conn,cfg,model,folder,journal,orders_enabled,active=None):
                                         blocked = "entry submitted"
                                 else:
                                     emit(folder,"watch_signal",side=signal["side"],score=signal["score"],symbol=symbol)
+        if current >= heartbeat_at:
+            status = "scanning quotes"
+            if t is None:
+                status = "waiting for a fresh broker quote"
+            elif bars is None or minute not in bars.index:
+                status = "waiting for minute history"
+            status = blocked or status
+            emit(folder,"heartbeat",mode=mode,symbol=symbol,status=status,last_decision=last_decision)
+            heartbeat_at = current + 15
         time.sleep(demo["poll_ms"]/1000)

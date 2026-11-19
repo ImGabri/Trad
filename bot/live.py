@@ -55,6 +55,7 @@ class Runner:
         self.paused = False
         self.events = pd.DatetimeIndex([], tz="UTC")
         self.last_cal = 0.0
+        self.bar_detail = "Waiting for a closed M1 bar from MT5"
         self.last_bar = None
         self.last_feat = None
         self.last_tg_poll = 0.0
@@ -101,6 +102,8 @@ class Runner:
             raise RuntimeError("This MT5 account is not a demo account — demo mode refuses to trade it.")
         if self.mode == "demo" and not mt5.terminal_info().trade_allowed:
             raise RuntimeError("Enable the 'Algo Trading' button in MT5, then start again.")
+        if self.mode == "demo" and getattr(mt5.terminal_info(), "tradeapi_disabled", False):
+            raise RuntimeError("MT5 Options > Expert Advisors: clear Disable automated trading via external Python API.")
         remember_terminal(self.data_dir)
         self.gold = self.conn.resolve_gold(cfg.symbols.primary)
         self.acct_usd = acct_per_usd(self.gold)
@@ -155,7 +158,7 @@ class Runner:
         pos = ex.bot_positions(self.gold) if self.mode == "demo" else []
         self.status.update(
             state="running", detail="paused" if self.paused else ("hard stop" if self.risk.hard_stop else
-                                                                  "daily loss halt" if self.risk.daily_halt else ""),
+                                                                  "daily loss halt" if self.risk.daily_halt else self.bar_detail),
             mode=self.mode, login=acc.login, server=acc.server, currency=acc.currency, balance=acc.balance,
             equity=acc.equity, price=tick.bid if tick else None, spread=(tick.ask - tick.bid) if tick else None,
             positions=[dict(ticket=p.ticket, side="BUY" if p.type == 0 else "SELL", lots=p.volume,
@@ -321,14 +324,17 @@ class Runner:
     def _check_new_bar(self):
         last = mt5.copy_rates_from_pos(self.gold, mt5.TIMEFRAME_M1, 1, 1)  # last CLOSED bar
         if last is None or not len(last):
+            self.bar_detail = "Waiting for MT5 closed M1 history"
             return
         t = int(last[0]["time"])
         if t == self.last_bar:
             return
         self.last_bar = t
         try:
+            self.bar_detail = ""
             self._on_bar()
-        except Exception:
+        except Exception as exc:
+            self.bar_detail = f"M1 processing failed: {exc}"
             log.exception("bar processing failed")
 
     def _on_bar(self):
@@ -398,8 +404,8 @@ class Runner:
                 ok, why2 = False, f"self-learning veto (P(win) {p_win:.2f} < {self.outcome.threshold:.2f})"
         acted = side != 0 and ok
         self.store.record_prediction(time=str(bar_time), p_up=p_up, p_down=1 - p_up, confidence=conf,
-                                     model_version=self.model.meta.get("trained_at", ""), signal=side, acted=int(acted))
-        decision = ("ENTER " + ("BUY" if side > 0 else "SELL")) if acted else (why2 or why)
+                                     model_version=self.model.meta.get("trained_at", ""), signal=side, acted=0)
+        decision = "Checking entry" if acted else (why2 or why)
         self.last_decision = dict(time=bar_time.strftime("%Y-%m-%d %H:%M"), close=round(float(row["close"]), 2),
                                   bias=int(s["bias"]), rule=int(s["rule_signal"]), p_up=round(p_up, 3),
                                   conf=round(conf, 3), session=s["session"], news=s["news_phase"], decision=decision)
@@ -415,19 +421,26 @@ class Runner:
                              self.info.volume_step, self.info.volume_min, min(self.info.volume_max, cfg.instrument.max_lot),
                              commission_per_side(cfg), getattr(cfg.risk, "min_lot_max_risk_pct", 0))
         if lots <= 0:
+            self.last_decision["decision"] = "Skipped: minimum lot exceeds the configured risk limit"
             log.info("skip: min lot would risk more than %.2f%% of equity", cfg.risk.risk_per_trade_pct)
             return
         tick = mt5.symbol_info_tick(self.gold)
         spread = tick.ask - tick.bid
         info = dict(symbol=self.gold, side=side, lots=lots, conf=conf, spread=spread, kind=kind, session=s["session"])
         if self.mode == "watch":
+            self.last_decision["decision"] = "Watch signal: " + info["side"]
             px = tick.ask if side > 0 else tick.bid
             self.tg.send("👀 (watch) " + fmt_entry(dict(info, price=px, sl=px - side * sl_d, tp=px + side * tp_d)))
             return
         fill = ex.open_market(self.gold, side, lots, sl_d, tp_d, self.dev_points, f"xau-v2 {kind} {conf:.2f}")
         if not fill.ok:
+            self.last_decision["decision"] = f"MT5 rejected order ({fill.retcode}): {fill.comment}"
+            log.warning("%s", self.last_decision["decision"])
             self.tg.send(f"⚠️ Order rejected: {fill.retcode} {fill.comment}")
             return
+        self.last_decision["decision"] = f"Filled {info['side']} at {fill.price}"
+        self.store.conn.execute("UPDATE predictions SET acted=1 WHERE time=?", (str(bar_time),))
+        self.store.conn.commit()
         slip = (fill.price - fill.requested) * side
         pos = next((p for p in ex.bot_positions(self.gold)
                     if p.ticket == fill.ticket or getattr(p, "identifier", None) == fill.ticket), None)

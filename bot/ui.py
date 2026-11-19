@@ -62,7 +62,7 @@ class Job:
         env = dict(os.environ, PYTHONUTF8="1", PYTHONUNBUFFERED="1")
         flags = 0x08000000 if os.name == "nt" else 0  # CREATE_NO_WINDOW
         try:
-            p = subprocess.Popen([str(exe), str(APP / "main.py"), *args], cwd=APP, env=env, stdout=subprocess.PIPE,
+            p = subprocess.Popen([str(exe), "-X", "utf8", "-u", str(APP / "main.py"), *args], cwd=APP, env=env, stdout=subprocess.PIPE,
                                  stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, text=True, encoding="utf-8",
                                  errors="replace", creationflags=flags)
             for line in p.stdout:
@@ -145,7 +145,8 @@ def state() -> dict:
 # -------------------------------------------------------------------------------- actions
 def _start_bot(mode: str) -> str:
     import background
-    (DATA / "STOP").unlink(missing_ok=True)
+    if (DATA / "STOP").exists():
+        return "Kill switch active. Review it before using Reset safety stops."
     if not (DATA / "model" / "model.txt").exists():
         ok = JOB.start("First-time setup: downloading history, training the AI, tuning the rules",
                        ["prepare"], after=lambda rc: rc == 0 and background.start(APP, mode))

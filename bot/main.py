@@ -124,7 +124,8 @@ def run_live(cfg, mode: str, keep_running=lambda: True, auto_retrain: bool = Fal
     from live import Runner
     if not (DATA / "model" / "model.txt").exists():
         raise SystemExit("No AI model yet — run option 2 (prepare) first.")
-    (DATA / "STOP").unlink(missing_ok=True)
+    if (DATA / "STOP").exists():
+        raise SystemExit("Kill switch active. Review it before using Reset safety stops.")
     return Runner(cfg, APP, mode, keep_running, auto_retrain).run()
 
 
