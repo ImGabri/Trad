@@ -60,6 +60,8 @@ def main():
             exe = str(rt / "python.exe")
             subprocess.run([exe, "-B", "-c", "import main, MetaTrader5, pandas, lightgbm, yaml, matplotlib, sklearn, pyarrow"],
                            cwd=app, check=True)
+            subprocess.run([exe, "-X", "utf8", "-B", "-m", "unittest", "discover", "-s", "tests",
+                            "-p", "test_demo_execution.py"], cwd=app, check=True)
             subprocess.run([exe, "-X", "utf8", "-B", "main.py", "smoke"], cwd=app, check=True)
             shutil.rmtree(app / "data_smoke", ignore_errors=True)
         zpath = dist / ASSET

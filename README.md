@@ -1,6 +1,6 @@
 # Trad
 
-**[Download the Windows demo scalper (V2)](https://github.com/ImGabri/Trad/releases/download/scalper-v2.0.1/TradV2-XAUUSD-Scalper-Windows-x64.zip)**
+**[Download the Windows demo scalper (V2)](https://github.com/ImGabri/Trad/releases/download/scalper-v2.0.2/TradV2-XAUUSD-Scalper-Windows-x64.zip)**
 
 Stop any running V1 session with Ctrl+C or disable its background task through menu 8. Keep your PU Prime demo terminal open. Extract the V2 ZIP into its own folder, open **START.cmd** and click **Start trading**. First launch trains a separate V2 model. The dashboard shows the last closed one-minute bar and its decision. See the [V2 guide](bot/README.md).
 

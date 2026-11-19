@@ -41,6 +41,13 @@ def min_stop_distance(info) -> float:
     return max(info.trade_stops_level, info.trade_freeze_level) * info.point
 
 
+def _send_demo(request):
+    account = mt5.account_info()
+    if account is None or account.trade_mode != mt5.ACCOUNT_TRADE_MODE_DEMO:
+        raise RuntimeError("Order blocked: select the PU Prime demo account in MT5.")
+    return mt5.order_send(request)
+
+
 def open_market(symbol: str, side: int, lots: float, sl_dist: float, tp_dist: float, deviation_points: int,
                 comment: str = "xau-v2") -> Fill:
     info, tick = mt5.symbol_info(symbol), mt5.symbol_info_tick(symbol)
@@ -54,7 +61,7 @@ def open_market(symbol: str, side: int, lots: float, sl_dist: float, tp_dist: fl
                sl=_round(price - side * sl_dist, info), tp=_round(price + side * tp_dist, info),
                deviation=int(deviation_points), magic=MAGIC, comment=comment[:31],
                type_time=mt5.ORDER_TIME_GTC, type_filling=_filling(info))
-    res = mt5.order_send(req)
+    res = _send_demo(req)
     if res is None:
         return Fill(False, requested=price, comment=str(mt5.last_error()))
     ok = res.retcode in (mt5.TRADE_RETCODE_DONE, mt5.TRADE_RETCODE_PLACED)
@@ -77,7 +84,7 @@ def modify_sl(pos, new_sl: float) -> bool:
         return False
     if pos.type == mt5.POSITION_TYPE_SELL and new_sl < tick.ask + gap:
         return False
-    res = mt5.order_send(dict(action=mt5.TRADE_ACTION_SLTP, symbol=pos.symbol, position=pos.ticket,
+    res = _send_demo(dict(action=mt5.TRADE_ACTION_SLTP, symbol=pos.symbol, position=pos.ticket,
                               sl=new_sl, tp=pos.tp, magic=MAGIC))
     return bool(res and res.retcode == mt5.TRADE_RETCODE_DONE)
 
@@ -86,7 +93,7 @@ def close_position(pos, deviation_points: int, comment: str = "close") -> Fill:
     info, tick = mt5.symbol_info(pos.symbol), mt5.symbol_info_tick(pos.symbol)
     buy = pos.type == mt5.POSITION_TYPE_BUY
     price = tick.bid if buy else tick.ask
-    res = mt5.order_send(dict(action=mt5.TRADE_ACTION_DEAL, symbol=pos.symbol, volume=pos.volume,
+    res = _send_demo(dict(action=mt5.TRADE_ACTION_DEAL, symbol=pos.symbol, volume=pos.volume,
                               type=mt5.ORDER_TYPE_SELL if buy else mt5.ORDER_TYPE_BUY, position=pos.ticket,
                               price=price, deviation=int(deviation_points), magic=MAGIC, comment=comment[:31],
                               type_time=mt5.ORDER_TIME_GTC, type_filling=_filling(info)))

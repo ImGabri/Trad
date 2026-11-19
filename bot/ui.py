@@ -73,12 +73,13 @@ class Job:
         except Exception as e:  # noqa: BLE001
             self.lines.append(f"Error: {e}")
             self.rc = -1
-        self.running = False
         if self.after:
             try:
                 self.after(self.rc)
             except Exception as e:  # noqa: BLE001
+                self.rc = -1
                 self.lines.append(f"Error: {e}")
+        self.running = False
 
     def state(self) -> dict:
         return dict(name=self.name, running=self.running, rc=self.rc, lines=list(self.lines)[-200:],

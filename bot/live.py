@@ -427,8 +427,9 @@ class Runner:
         tick = mt5.symbol_info_tick(self.gold)
         spread = tick.ask - tick.bid
         info = dict(symbol=self.gold, side=side, lots=lots, conf=conf, spread=spread, kind=kind, session=s["session"])
+        side_name = "BUY" if side > 0 else "SELL"
         if self.mode == "watch":
-            self.last_decision["decision"] = "Watch signal: " + info["side"]
+            self.last_decision["decision"] = "Watch signal: " + side_name
             px = tick.ask if side > 0 else tick.bid
             self.tg.send("👀 (watch) " + fmt_entry(dict(info, price=px, sl=px - side * sl_d, tp=px + side * tp_d)))
             return
@@ -438,7 +439,8 @@ class Runner:
             log.warning("%s", self.last_decision["decision"])
             self.tg.send(f"⚠️ Order rejected: {fill.retcode} {fill.comment}")
             return
-        self.last_decision["decision"] = f"Filled {info['side']} at {fill.price}"
+        self.last_decision["decision"] = (f"Filled {side_name} at {fill.price}" if fill.retcode == mt5.TRADE_RETCODE_DONE
+                                          else f"MT5 accepted {side_name} order #{fill.ticket}")
         self.store.conn.execute("UPDATE predictions SET acted=1 WHERE time=?", (str(bar_time),))
         self.store.conn.commit()
         slip = (fill.price - fill.requested) * side

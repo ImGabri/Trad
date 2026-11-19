@@ -79,13 +79,19 @@ def start(root: Path, mode: str):
         raise RuntimeError("pythonw.exe not found next to python.exe.")
     stop(root, quiet=True)
     control_path(root).parent.mkdir(exist_ok=True)
-    control_path(root).write_text(json.dumps({"enabled": True, "mode": mode, "generation": uuid4().hex}))
+    control = {"enabled": True, "mode": mode, "generation": uuid4().hex}
     name = task_name()
     with tempfile.TemporaryDirectory() as tmp:
         x = Path(tmp) / "task.xml"
         x.write_bytes(_xml(_sid(), root, pythonw))
         _tool("schtasks", "/Create", "/TN", name, "/XML", x, "/F")
-    _tool("schtasks", "/Run", "/TN", name)
+    control_path(root).write_text(json.dumps(control))
+    try:
+        _tool("schtasks", "/Run", "/TN", name)
+    except Exception:
+        control["enabled"] = False
+        control_path(root).write_text(json.dumps(control))
+        raise
 
 
 def stop(root: Path, quiet=False):
