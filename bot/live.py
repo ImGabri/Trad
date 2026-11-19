@@ -137,6 +137,8 @@ class Runner:
                 if self.stop_file.exists():
                     self.kill("STOP file")
                     return "killed"
+                if (self.data_dir / "RESET").exists():
+                    self._apply_reset()
                 if not self.conn.ensure_connected(on_give_up=self._on_disconnect):
                     raise RuntimeError("MT5 connection lost for 10 minutes")
                 self._poll_telegram()
@@ -211,6 +213,21 @@ class Runner:
         self.tg.send(msg, block=True)
         self.status.update(state="killed", detail=why)
 
+    def _apply_reset(self):
+        """Dashboard "Reset daily limits": a fresh trading day from now (loss counted from current equity), trade
+        count 0, daily-loss halt / survival stop / drift pause / Telegram pause cleared. Open trades are untouched."""
+        (self.data_dir / "RESET").unlink(missing_ok=True)
+        acc = mt5.account_info()
+        eq = float(acc.equity) if acc else self.risk.day_start_equity
+        self.risk.day = datetime.now(timezone.utc).date()
+        self.risk.day_start_equity, self.risk.trades_today = eq, 0
+        self.risk.daily_halt = self.risk.hard_stop = self.risk.drift_pause = False
+        self.paused = False
+        self.drift.results.clear()
+        self._save_state()
+        log.info("reset: daily counters and safety stops cleared at equity %.2f", eq)
+        self.tg.send(f"🔄 Reset: new day started at equity {eq:.2f}, all safety stops cleared.")
+
     def _poll_telegram(self):
         if not self.tg.enabled or time.time() - self.last_tg_poll < 5:
             return
@@ -221,6 +238,8 @@ class Runner:
             elif cmd == "/pause":
                 self.paused = True
                 self.tg.send("⏸ New entries paused.")
+            elif cmd == "/reset":
+                self._apply_reset()
             elif cmd == "/resume":
                 self.paused, self.risk.drift_pause = False, False
                 self.tg.send("▶️ Entries resumed.")

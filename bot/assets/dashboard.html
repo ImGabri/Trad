@@ -88,7 +88,7 @@ details summary{cursor:pointer;font-weight:700;color:var(--mute);list-style:none
     <div class="row" style="margin-top:12px"><button class="btn" onclick="act('check')">Check MT5</button>
       <button class="btn gold" onclick="if(confirm('Open and close a 0.01-lot BUY on your DEMO account to test the order path?'))act('test_trade')">Place test trade</button>
       <button class="btn danger" onclick="if(confirm('Close ALL bot trades now and halt the bot?'))act('kill')">Close all &amp; halt</button>
-      <button class="btn" onclick="act('reset')">Reset safety stops</button></div></section>
+      <button class="btn gold" onclick="if(confirm('Reset: start a fresh trading day now (daily loss limit and trade count back to zero) and clear the kill switch, survival stop and drift pause. Open trades are not touched. Continue?'))act('reset')" title="Clears the daily loss halt, trade count and all safety stops">🔄 Reset daily limits &amp; stops</button></div></section>
 
   <section class="card s12"><h2>Market outlook — next 60 minutes</h2>
     <div class="outlook">
@@ -174,7 +174,7 @@ else if(bg.background==="on"){const m=bg.mode==="demo"?"Trading your demo":"Watc
  if(bg.worker==="running"){head=m;sub=w.detail?w.detail:"Scanning every closed minute of gold.";pill=["Live",w.detail?"warn":"ok"]}
  else if(w.state==="retrain"){head="Weekend retrain";sub="Learning from this week's data while gold is closed.";pill=["Training","warn"]}
  else{head="Starting…";sub=bg.detail||w.detail||"Connecting to MT5…";pill=["Starting","warn"]}}
-if(s.stop_file||w.state==="killed"){head="Halted by kill switch";sub="Press “Reset safety stops”, then START.";pill=["Halted","bad"]}
+if(s.stop_file||w.state==="killed"){head="Halted by kill switch";sub="Press “🔄 Reset daily limits &amp; stops”, then START.";pill=["Halted","bad"]}
 if(smallTurbo)sub+=" ⚠ Under €100: each 0.01-lot trade risks a big part of the account (backtests: €50 blown in 2 of 3 periods, €100+ profitable in all).";
 $("headline").textContent=head;$("subline").textContent=sub;$("pillTxt").textContent=pill[0];$("pill").className="pill "+pill[1];
 paintSeg("modeSeg",bg.background==="on"?bg.mode:mode);paintSeg("styleSeg",s.style);paintPower();

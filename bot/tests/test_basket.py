@@ -102,3 +102,34 @@ def test_live_hyper_opens_independent_trades_up_to_max_open(tmp_path):
     legs = list(fake.positions.values())
     if len(legs) > 1:   # independent trades: each has its own stop / target
         assert len({round(p.sl, 2) for p in legs}) > 1
+
+
+def test_reset_clears_daily_halt_and_stops_while_running(tmp_path):
+    m1 = synthetic_m1(days=40, seed=7)
+    fake_mt5.install(m1, start_bar=20000)
+    for name in ("data", "execution", "live"):
+        if name in sys.modules:
+            importlib.reload(sys.modules[name])
+    from config import load_config
+    from features import build_features
+    from ai_model import DirectionModel
+    import live
+    cfg = load_config(ROOT / "config.yaml", use_tuned=False, overrides={"strategy": {"mode": "scalp"}})
+    cfg.broker.server_utc_offset_hours = 2
+    DirectionModel.fit(build_features(m1.iloc[:20000], cfg), cfg, rounds=40).save(tmp_path / "data" / "model")
+    seen = {}
+    def keep():
+        n = seen["i"] = seen.get("i", 0) + 1
+        if n == 3:
+            r.risk.daily_halt = r.risk.hard_stop = r.risk.drift_pause = True
+            r.risk.trades_today = 99
+            (tmp_path / "data" / "RESET").write_text("x")
+        if n == 6:
+            seen["after"] = (r.risk.daily_halt, r.risk.hard_stop, r.risk.drift_pause, r.risk.trades_today)
+        return n < 8
+    r = live.Runner(cfg, tmp_path, "demo", keep)
+    r.events = pd.DatetimeIndex([], tz="UTC"); r.last_cal = 1e18
+    live.time.sleep = lambda s: None
+    r.run()
+    assert seen["after"] == (False, False, False, 0)
+    assert not (tmp_path / "data" / "RESET").exists()

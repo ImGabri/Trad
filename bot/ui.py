@@ -347,7 +347,7 @@ def action(name: str, body: dict) -> str:
                 else "Busy — try again in a moment.")
     if name == "reset":
         JOB.start("Reset", ["reset"])
-        return "Kill switch and safety stops cleared."
+        return "🔄 Reset: daily loss limit and trade count back to zero, all safety stops cleared (applies within a second if the bot is running)."
     if name == "check":
         return "Checking MT5…" if JOB.start("Checking MT5 connection", ["doctor"]) else "Busy."
     if name == "retrain":

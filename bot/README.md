@@ -28,6 +28,15 @@ tab: the bot keeps running, stops Windows from going to sleep while it trades, a
 | News | Verified 2019–2026 US calendar (NFP, CPI, PPI, FOMC, retail sales, GDP, PCE, JOLTS, ISM) plus a live ForexFactory feed. No entries 15→5 min before an event (stops tightened). One AI "news scalp" in the ±5 min window. Wider stops for 15 min after. |
 | Risk | 0.5 % per trade. Small-account mode trades 0.01 lot when that risks ≤ 10 % (a €50 start). 15 % daily loss halt, max 2 open / 20 trades a day, spread and slippage filters, survival hard stop, no averaging down, demo accounts only. |
 
+## v2.9.1 — 🔄 Reset button
+
+**🔄 Reset daily limits & stops** is in Setup (Telegram: `/reset`).
+- **What it clears:**
+  - It starts a fresh trading day from your current equity, so the daily loss limit and the trade count go back
+    to zero.
+  - It clears the kill switch, the survival stop and the drift pause.
+- **When it applies:** within a second if the bot is running. Open trades are not touched.
+
 ## v2.9 — buys AND sells
 
 - **☠️ Extreme and 💀 Hyper now trade with the candles.**
