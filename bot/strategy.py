@@ -171,6 +171,27 @@ def turbo_signal(f: pd.DataFrame, lookback_h: int = 24, ema_fast: int = 20, ema_
     return sig
 
 
+def basket_signal(f: pd.DataFrame, cfg) -> pd.Series:
+    """🧺 Basket: direction from the last N candles — all N up → +1 (buy), all N down → −1 (sell); `follow: false`
+    fades them instead. On M5 candles the signal is only given at each M5 close. No look-ahead (closed candles only)."""
+    b = cfg.basket
+    n = int(getattr(b, "candles", 3))
+    idx = f.index
+    if str(getattr(b, "candles_tf", "m5")).lower() == "m1":
+        body = np.sign(f["close"] - f["open"])
+        r = body.rolling(n)
+        s = pd.Series(np.where(r.min() > 0, 1, np.where(r.max() < 0, -1, 0)), index=idx)
+    else:
+        m5 = f[["open", "close"]].resample("5min", label="left", closed="left").agg({"open": "first", "close": "last"}).dropna()
+        body = np.sign(m5["close"] - m5["open"])
+        r = body.rolling(n)
+        s5 = pd.Series(np.where(r.min() > 0, 1, np.where(r.max() < 0, -1, 0)), index=m5.index + pd.Timedelta(minutes=5))
+        al = pd.merge_asof(pd.DataFrame(index=idx + pd.Timedelta(minutes=1)), s5.rename("v").to_frame(),
+                           left_index=True, right_index=True, direction="backward")["v"].fillna(0).to_numpy()
+        s = pd.Series(np.where((idx.minute % 5) == 4, al, 0), index=idx)
+    return (s * (1 if getattr(b, "follow", True) else -1)).astype(int)
+
+
 def compute_signals(f: pd.DataFrame, cfg, events: pd.DatetimeIndex | None = None) -> pd.DataFrame:
     out = pd.DataFrame(index=f.index)
     out["bias"] = m15_bias(f, cfg)
@@ -179,8 +200,11 @@ def compute_signals(f: pd.DataFrame, cfg, events: pd.DatetimeIndex | None = None
     out["trigger"] = m1_trigger(f, cfg)
     out["rule_signal"] = np.where((out["bias"] != 0) & out["at_level"] & (out["trigger"] == out["bias"]),
                                   out["bias"], 0)
-    if str(getattr(cfg.strategy, "mode", "scalp")).lower() == "turbo":
+    mode = str(getattr(cfg.strategy, "mode", "scalp")).lower()
+    if mode == "turbo":
         out["rule_signal"] = turbo_signal(f)
+    elif mode == "basket":
+        out["rule_signal"] = basket_signal(f, cfg)
     out = out.join(session_state(f.index, cfg)).join(news_phase(f.index, events, cfg))
     for col in ("session", "news_phase"):  # categoricals: ~8× smaller than Python string objects
         out[col] = out[col].astype("category")

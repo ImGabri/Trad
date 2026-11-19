@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT)); sys.path.insert(0, str(ROOT / "tests"))
 
 import analyst  # noqa: E402
-from analyst import M15Analyst, NewsAgent, chart_snapshot, m15_frame, m15_label, outlook_for_m1  # noqa: E402
+from analyst import M15Analyst, chart_snapshot, m15_frame, m15_label, outlook_for_m1  # noqa: E402
 from synthetic import synthetic_m1  # noqa: E402
 
 
@@ -30,41 +30,28 @@ def test_m15_analyst_trains_predicts_and_never_looks_ahead(tmp_path):
     assert (ol.loc[ol.index < first_bar + pd.Timedelta(minutes=14), "outlook_conf"] == 0).all()
 
 
-class FakeClient:
-    def __init__(self, payload):
-        self.payload = payload
-        self.calls = []
-        self.beta = NS(messages=NS(create=self.create))
-
-    def create(self, **kw):
-        self.calls.append(kw)
-        return NS(stop_reason="end_turn", content=[NS(type="text", text=json.dumps(self.payload))])
-
-
-def test_news_agent_structured_outlook_and_self_grading(tmp_path, monkeypatch):
-    payload = dict(bias="up", confidence=0.72, trade_conditions="normal", summary="Soft CPI weakens the dollar.",
-                   drivers=["CPI below forecast"], risks=["FOMC speakers"])
-    fake = FakeClient(payload)
-    monkeypatch.setitem(sys.modules, "anthropic", NS(Anthropic=lambda: fake))
-    agent = NewsAgent(tmp_path)
-    out = agent.analyse({"price": 4000.0})
-    assert out["bias"] == "up" and out["confidence"] == 0.72
-    call = fake.calls[0]
-    assert call["model"] == "claude-opus-5-5" and call["output_config"]["format"]["type"] == "json_schema"
-    assert call["tools"][0]["type"] == "web_search_20260209"
-    # graded 60+ minutes later: price went up → correct
-    later = datetime.now(timezone.utc) + timedelta(minutes=61)
-    tr = agent.track_record(4005.0, now=later)
-    assert tr["graded"] == 1 and tr["hit_rate"] == 1.0
-    # the track record is fed back into the next prompt
-    agent.analyse({"price": 4005.0})
-    assert '"hit_rate": 1.0' in fake.calls[1]["messages"][0]["content"]
+def test_free_headline_analyst_scores_and_grades(tmp_path):
+    from news_local import LocalNewsAgent, analyse, score_headline
+    now = datetime.now(timezone.utc)
+    hl = [{"title": "Gold price drops to 14-month low as dollar, yields rise on hawkish Fed", "time": now - timedelta(hours=1), "source": "Google News"},
+          {"title": "Gold slumps as Fed signals more rate hikes", "time": now - timedelta(hours=2), "source": "FXEmpire"},
+          {"title": "Gold rallies on safe-haven demand amid tensions", "time": now - timedelta(hours=20), "source": "BBC Business"},
+          {"title": "Gold Price Forecast Mexico 2026 (XAU/MXN)", "time": now, "source": "Google News"}]
+    assert score_headline(hl[0]["title"]) < 0 and score_headline(hl[2]["title"]) > 0 and score_headline(hl[3]["title"]) == 0
+    r = analyse(hl, now)
+    assert r["bias"] == "down" and 0.5 < r["confidence"] <= 0.85 and r["headlines"] == 3
+    assert r["drivers"] and "drops" in r["drivers"][0]
+    agent = LocalNewsAgent(tmp_path)
+    out = agent.analyse({"price": 4000.0, "minutes_to_event": 10}, headlines=hl)
+    assert out["trade_conditions"] == "avoid"                 # release in 10 min → avoid
+    tr = agent.track_record(3990.0, now=now + timedelta(minutes=61))
+    assert tr["graded"] == 1 and tr["hit_rate"] == 1.0        # said down, price fell → correct
 
 
 def test_vetoes(monkeypatch):
     from config import load_config
     from strategy import decide_entry
-    cfg = load_config(ROOT / "config.yaml", use_tuned=False)
+    cfg = load_config(ROOT / "config.yaml", use_tuned=False, overrides={"strategy": {"mode": "scalp"}})
     base = dict(rule=1, ai_dir=1, conf=0.6, has_ai=True, session="london", blocked=False, phase="none", event_id=-1,
                 news_used=set(), spread_ratio=1.0, atr_m5=4.0, slippage_usd=0.0, bias=1)
     assert decide_entry(cfg, **base)[0] == 1

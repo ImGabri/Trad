@@ -12,7 +12,7 @@ symbols:
 
 # Other markets fed to the AI as 1- and 5-minute % changes. `mt5`: PU Prime symbol candidates (the account
 # suffix such as ".s" is added automatically); `hf`: public 1-minute history for training on older years.
-# A market is only used when it is available both live and in training (no US 10Y symbol on PU Prime → not used).
+# A market is only used when it is available both live and in training; markets PU Prime does not offer are skipped.
 context:
   dxy:    {mt5: [USDX, DXY, USDIndex, USIndex, DOLLAR_INDX], hf: ""}
   spx:    {mt5: [SP500, US500, SPX500, SP500ft], hf: bunqi/OANDA_SPX500USD_US-SPX-500}
@@ -23,6 +23,37 @@ context:
   wti:    {mt5: [USOUSD, USOIL, XTIUSD, CL-OIL], hf: bunqi/OANDA_WTICOUSD_West-Texas-Oil}
   audusd: {mt5: [AUDUSD], hf: bunqi/OANDA_AUDUSD_AUDUSD}
   usdcnh: {mt5: [USDCNH], hf: bunqi/OANDA_USDCNH_USDCNH}
+  # v2.7 — more markets that move with (or against) gold. Used once the AI retrains (weekend or "Retrain AI now").
+  gbpusd:  {mt5: [GBPUSD], hf: bunqi/OANDA_GBPUSD_GBPUSD}
+  usdchf:  {mt5: [USDCHF], hf: bunqi/OANDA_USDCHF_USDCHF}            # franc = the other safe haven
+  usdcad:  {mt5: [USDCAD], hf: bunqi/OANDA_USDCAD_USDCAD}
+  nzdusd:  {mt5: [NZDUSD], hf: bunqi/OANDA_NZDUSD_NZDUSD}
+  eurjpy:  {mt5: [EURJPY], hf: bunqi/OANDA_EURJPY_EURJPY}
+  audjpy:  {mt5: [AUDJPY], hf: bunqi/OANDA_AUDJPY_AUDJPY}            # risk-on / risk-off gauge
+  gbpjpy:  {mt5: [GBPJPY], hf: bunqi/OANDA_GBPJPY_GBPJPY}
+  eurchf:  {mt5: [EURCHF], hf: bunqi/OANDA_EURCHF_EURCHF}
+  xaueur:  {mt5: [XAUEUR], hf: bunqi/OANDA_XAUEUR_GoldEUR}           # gold in other currencies
+  xaujpy:  {mt5: [XAUJPY], hf: bunqi/OANDA_XAUJPY_GoldJPY}
+  xauaud:  {mt5: [XAUAUD], hf: bunqi/OANDA_XAUAUD_GoldAUD}
+  platinum:  {mt5: [XPTUSD, PLATINUM], hf: bunqi/OANDA_XPTUSD_Platinum}
+  palladium: {mt5: [XPDUSD, PALLADIUM], hf: bunqi/OANDA_XPDUSD_Palladium}
+  copper:  {mt5: [COPPER, XCUUSD, HG-C], hf: bunqi/OANDA_XCUUSD_Copper}
+  brent:   {mt5: [UKOUSD, UKOIL, XBRUSD, BRENT], hf: bunqi/OANDA_BCOUSD_Brent-Crude-Oil}
+  natgas:  {mt5: [NG-C, NGAS, XNGUSD, NATGAS], hf: bunqi/OANDA_NATGASUSD_Natural-Gas}
+  us30:    {mt5: [US30, DJ30, DJI30, WS30], hf: bunqi/OANDA_US30USD_US-Wall-St-30}
+  us2000:  {mt5: [US2000, RUSS2000, US2K], hf: bunqi/OANDA_US2000USD_US-Russ-2000}
+  dax:     {mt5: [GER40, DE40, GER30, DAX40], hf: bunqi/OANDA_DE30EUR_Germany-30}
+  eu50:    {mt5: [EU50, EUSTX50, STOXX50], hf: bunqi/OANDA_EU50EUR_Europe-50}
+  uk100:   {mt5: [UK100, FTSE100], hf: bunqi/OANDA_UK100GBP_UK-100}
+  jp225:   {mt5: [JP225, JPN225, NIKKEI], hf: bunqi/OANDA_JP225USD_Japan-225}
+  hk50:    {mt5: [HK50, HSI, HK33], hf: bunqi/OANDA_HK33HKD_Hong-Kong-33}
+  china50: {mt5: [CHINA50, CN50, CHINAA50], hf: bunqi/OANDA_CN50USD_China-A50}
+  btc:     {mt5: [BTCUSD], hf: bunqi/OANDA_BTCUSD_Bitcoin}
+  eth:     {mt5: [ETHUSD], hf: bunqi/OANDA_ETHUSD_Ether}
+  us10y:   {mt5: [UST10Y, US10Y, TNOTE], hf: bunqi/OANDA_USB10YUSD_US-10Y-T-Note}   # real yields drive gold
+  us02y:   {mt5: [UST02Y, US02Y], hf: bunqi/OANDA_USB02YUSD_US-2Y-T-Note}
+  bund:    {mt5: [BUND, DE10Y, EUBUND], hf: bunqi/OANDA_DE10YBEUR_Bund}
+  vix:     {mt5: [VIX, VIXX, VOLX], hf: ""}                             # live only (no training history)
 
 instrument:                  # XAUUSD contract spec; live values are re-read from symbol_info
   contract_size: 100         # oz per lot -> $1 move = $100/lot
@@ -62,7 +93,7 @@ strategy:   # defaults tuned for a €50 PU Prime Standard account (least-losing
   trail_trigger_atr: 0.5
   trail_distance_atr: 0.75
   time_stop_minutes: 20
-  mode: scalp                # scalp (rules + AI) | turbo (hourly trend breakout — dashboard 🚀 Turbo)
+  mode: turbo                # turbo (default, best in testing) | scalp (rules + AI) | basket — dashboard style buttons
   ai_gate: true
   confidence_threshold: 0.5   # "Active" demo style: trade every rule setup the AI agrees with (Careful = 0.65)
   # Equity take-profit: close a trade once it is +X % of account equity in profit — unless the AI still
@@ -109,14 +140,34 @@ news:
   post_window_min: [5, 15]   # T+5 .. T+15: SL × 1.2
   post_sl_mult: 1.2
 
+turbo:                       # 🚀 Turbo (default) — applied on top of everything when strategy.mode = turbo
+  # Hourly 24-bar breakout, long-only, with the hourly EMA20/50 trend. Best of 768 tested variants: profitable in
+  # 2019–23, 2024–25 AND Aug 2025–Nov 2026 for accounts from €100 (at 1 % risk). €50 blew up in 2 of 3 periods.
+  strategy: {ai_gate: false, sl_atr: 3.0, tp_atr: 40.0, trail_trigger_atr: 99.0, trail_distance_atr: 99.0,
+             time_stop_minutes: 900, equity_tp_pct: 0.0, ai_only_min_conf: 0.0}
+  risk: {risk_per_trade_pct: 1.0, min_lot_max_risk_pct: 70, max_concurrent: 1, daily_loss_limit_pct: 30,
+         survival_multiplier: 1.0}
+  analyst: {veto_conf: 0.0}
+  sessions: {asia_enabled: true}   # breakouts in Asia hours were part of the tested edge
+
+basket:                      # 🧺 Basket mode (dashboard) — opt-in. Least-losing of 1,296 tested variants; it still LOST
+                             # ~$0.36 per basket (80 % wins) in 2020–2025 backtests. Demo experiment only.
+  candles_tf: m5             # m1 | m5 — candles used for the direction
+  candles: 5                 # last N candles all the same colour → direction
+  follow: true               # true: trade with the candles; false: fade them
+  step_atr: 0.75              # add a leg every step×ATR against the last entry
+  max_entries: 2             # legs per basket (incl. the first)
+  tp_atr: 1.0                # whole basket closes at average entry ± tp×ATR
+  sl_atr: 6.0                # basket stop, measured from the FIRST entry
+  hold_minutes: 240          # close the basket after this long
+  equity_per_001: 50         # 0.01 lot per this much equity (account currency) — lots grow with the account
+
 analyst:                     # "what will probably happen next" — see analyst.py
   enabled: true
   veto_conf: 0.55            # skip a trade when the 15-min outlook points the other way with ≥ this confidence
-  news_agent: auto           # Claude reads live gold news every 15 min (auto = on when an Anthropic API key is set)
-  news_model: claude-opus-5-5
+  news_agent: on             # free headline analyst (Google News RSS, no API key) — off to disable
   news_interval_min: 15
-  news_effort: medium
-  news_veto_conf: 0.65       # skip a trade when the news agent expects the opposite with ≥ this confidence
+  news_veto_conf: 0.75       # skip a trade only when headlines strongly point the other way (not backtestable → cautious)
 
 history:
   years: 7                   # training history (broker bars + public OANDA data for older years)

@@ -153,13 +153,19 @@ STYLES = {  # one click instead of editing numbers
                "sessions": {"asia_min_confidence": 0.55}},
     "careful": {"strategy": {"confidence_threshold": 0.65, "ai_only_min_conf": 0.0},
                 "sessions": {"asia_min_confidence": 0.75}},
-    # 🚀 Turbo — winner of the €50 race (150 random 30-day windows 2024–26): doubled €50 in 40 %, blown 1–2 %
-    "turbo": {"strategy": {"mode": "turbo", "ai_gate": False, "sl_atr": 6.0, "tp_atr": 30.0, "trail_trigger_atr": 8.0,
-                           "trail_distance_atr": 6.0, "time_stop_minutes": 600, "equity_tp_pct": 0.0, "ai_only_min_conf": 0.0},
-              "risk": {"min_lot_max_risk_pct": 70, "max_concurrent": 1, "daily_loss_limit_pct": 30, "survival_multiplier": 1.0},
-              "analyst": {"veto_conf": 0.0}},
+    "turbo": {"strategy": {"mode": "turbo"}},  # exits/risk come from the config.yaml `turbo:` section
 }
-for _k in ("active", "careful"):  # leaving Turbo restores the scalping engine
+STYLES["perfect"] = STYLES["turbo"]  # 🎯 Perfect = best backtested strategy (improved Turbo, config `turbo:` section)
+BASKET_DEFAULT = {"candles_tf": "m5", "candles": 5, "follow": True, "step_atr": 0.75, "max_entries": 2, "tp_atr": 1.0,
+                  "sl_atr": 6.0, "hold_minutes": 240, "equity_per_001": 50}
+STYLES["basket"] = {"strategy": {"mode": "basket"}, "basket": dict(BASKET_DEFAULT), "risk": {"max_daily_trades": 100000}}
+# ☠️ Extreme: basket at maximum speed — 2 one-minute candles decide, 4 legs, quick target, 24 h, no daily cap.
+# Backtest (€100): ~40 baskets/day, 78–86 % won, but blown in 2020–23, 2024–25 and Aug 2025–Nov 2026.
+STYLES["extreme"] = {"strategy": {"mode": "basket"}, "risk": {"max_daily_trades": 100000},
+                     "sessions": {"asia_enabled": True},
+                     "basket": dict(BASKET_DEFAULT, candles_tf="m1", candles=2, step_atr=0.3, max_entries=4, tp_atr=0.5,
+                                    sl_atr=3.0, hold_minutes=60)}
+for _k in ("active", "careful"):  # leaving Turbo/Basket restores the scalping engine
     STYLES[_k].setdefault("strategy", {}).update(mode="scalp", ai_gate=True)
 
 
@@ -191,6 +197,9 @@ def _style() -> str:
     st = load_config(APP / "config.yaml").strategy
     if str(getattr(st, "mode", "scalp")) == "turbo":
         return "turbo"
+    if str(getattr(st, "mode", "scalp")) == "basket":
+        b = load_config(APP / "config.yaml").basket
+        return "extreme" if str(b.candles_tf) == "m1" and int(b.candles) <= 2 else "basket"
     thr = st.confidence_threshold
     return "active" if thr <= 0.55 else "careful"
 
@@ -211,7 +220,6 @@ def state() -> dict:
                    valid_auc=meta.get("valid_auc"), win_rate=meta.get("backtest_win_rate")),
         tuned=dict(adopted=tuned, validate=chosen), report=(DATA / "report" / "report.html").exists(),
         telegram=bool(env.get("TELEGRAM_TOKEN") and env.get("TELEGRAM_CHAT_ID")),
-        news_key=bool(env.get("ANTHROPIC_API_KEY")),
         mt5_login=env.get("MT5_LOGIN", ""), mt5_server=env.get("MT5_SERVER", ""),
         stop_file=(DATA / "STOP").exists(), settings=_user_settings(),
         check=_read_json(DATA / "mt5_check.json"), style=_style(),
@@ -272,10 +280,12 @@ def _restart_if_running() -> str:
     return ""
 
 
-def _write_user(updates: dict):
+def _write_user(updates: dict, replace: bool = False):
+    import copy
     from config import _deep_update
     p = DATA / "user.yaml"
-    cur = (yaml.safe_load(p.read_text()) if p.exists() else {}) or {}
+    cur = {} if replace else ((yaml.safe_load(p.read_text()) if p.exists() else {}) or {})
+    updates = copy.deepcopy(updates)
     _deep_update(cur, updates)
     DATA.mkdir(exist_ok=True)
     p.write_text(yaml.safe_dump(cur, sort_keys=False))
@@ -336,21 +346,17 @@ def action(name: str, body: dict) -> str:
         return "Saved on this PC (.env). The bot will log MT5 in by itself after a reboot."
     if name == "settings":
         return _save_settings(body)
-    if name == "anthropic":
-        key = str(body.get("key", "")).strip()
-        if key and not key.startswith("sk-ant-"):
-            return "That doesn't look like an Anthropic API key (it starts with sk-ant-)."
-        _write_env({"ANTHROPIC_API_KEY": key} if key else {"ANTHROPIC_API_KEY": ""})
-        return ("Saved — Claude will read live gold news every 15 minutes." if key else "News agent turned off.") + \
-            _restart_if_running()
     if name == "style":
         style = body.get("style")
         if style not in STYLES:
             return "Unknown style."
-        _write_user(STYLES[style])
+        _write_user(STYLES[style], replace=True)  # a style is a complete, tested setup — no leftover tweaks
         msg = {"active": "Active: trades every setup the AI agrees with.",
                "careful": "Careful: only high-confidence setups.",
-               "turbo": "🚀 Turbo: hourly trend breakouts, wide stops — best €50 growth in testing (high risk per trade)."}
+               "turbo": "🎯 Perfect: the best backtested strategy (hourly trend breakouts, 1 % risk). Use €100+.",
+               "perfect": "🎯 Perfect: the best backtested strategy (hourly trend breakouts, 1 % risk). Use €100+.",
+               "extreme": "☠️ Extreme: ~40 baskets a day on 1-minute candles. Lost money in every backtest period.",
+               "basket": "🧺 Basket: follows the last candles and adds legs; whole basket closes together (lost money in backtests)."}
         return msg[style] + _restart_if_running()
     if name == "test_trade":
         return ("Placing a 0.01-lot test trade on your demo…" if JOB.start("Test trade on your demo account",

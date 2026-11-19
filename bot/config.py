@@ -1,6 +1,7 @@
 """Load config.yaml + secrets from environment (.env) into attribute-style objects."""
 from __future__ import annotations
 
+import copy
 import os
 from pathlib import Path
 from types import SimpleNamespace
@@ -44,6 +45,12 @@ def load_config(path: str | Path | None = None, overrides: dict | None = None, u
     user = data_dir / "user.yaml"  # dashboard settings — always win
     if user.exists():
         _deep_update(raw, yaml.safe_load(user.read_text()) or {})
+    if overrides:
+        _deep_update(raw, copy.deepcopy(overrides))
+    if str(raw.get("strategy", {}).get("mode", "scalp")).lower() == "turbo" and isinstance(raw.get("turbo"), dict):
+        _deep_update(raw, copy.deepcopy(raw["turbo"]))  # Turbo's own exits / risk (config.yaml `turbo:` section)
+        if user.exists():  # explicit dashboard settings still win
+            _deep_update(raw, {k: v for k, v in (yaml.safe_load(user.read_text()) or {}).items() if k != "strategy"})
     local = data_dir / "local.json"  # machine-specific: MT5 terminal path remembered at first connect
     if not raw["broker"].get("terminal_path") and local.exists():
         import json
@@ -53,8 +60,8 @@ def load_config(path: str | Path | None = None, overrides: dict | None = None, u
                 raw["broker"]["terminal_path"] = tp
         except ValueError:
             pass
-    if overrides:
-        _deep_update(raw, overrides)
+    if overrides:  # explicit overrides always win
+        _deep_update(raw, copy.deepcopy(overrides))
     _load_dotenv(path.with_name(".env"))
     cfg = _ns(raw)
     cfg.secrets = SimpleNamespace(

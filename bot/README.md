@@ -28,6 +28,60 @@ tab: the bot keeps running, stops Windows from going to sleep while it trades, a
 | News | Verified 2019–2026 US calendar (NFP, CPI, PPI, FOMC, retail sales, GDP, PCE, JOLTS, ISM) plus a live ForexFactory feed. No entries 15→5 min before an event (stops tightened). One AI "news scalp" in the ±5 min window. Wider stops for 15 min after. |
 | Risk | 0.5 % per trade. Small-account mode trades 0.01 lot when that risks ≤ 10 % (a €50 start). 15 % daily loss halt, max 2 open / 20 trades a day, spread and slippage filters, survival hard stop, no averaging down, demo accounts only. |
 
+## v2.7 — 🎯 Perfect, ☠️ Extreme and 30 more markets
+
+- **🎯 Perfect** (the default style) is the best strategy found in all backtests, Turbo with its tested settings.
+  Press **▶ Start** and it does everything else. Choosing any style button clears old manual tweaks so the preset
+  is applied exactly as tested.
+  - Backtest (€100 start, 1 % risk, real Standard costs): **+125 %** in 2019–23, **+617 %** in 2024–mid-25 and
+    **+529 %** from Aug 2025 to Nov 2026. The worst drawdown was −84 %.
+- **☠️ Extreme** is a basket that trades very fast:
+  - It follows the last 2 one-minute candles and adds up to 4 legs every 0.3 × ATR.
+  - The basket target is 0.5 × ATR, with a 3 × ATR stop and a 60-minute limit.
+  - It trades around the clock with no daily limit, about 40 baskets a day.
+  - **Backtest:** it wins 78–86 % of baskets but loses about $0.70–$1.10 per basket on average. A €100 account
+    was **blown in every tested period**. It is a demo experiment, and the dashboard asks you to confirm.
+- **🧺 Basket** now has unlimited trades a day, and it buys and sells.
+- **More data for the AI:**
+  - **Currencies:** GBP, CHF, CAD, NZD, EUR/JPY, AUD/JPY, GBP/JPY and EUR/CHF.
+  - **Gold priced in other currencies:** EUR, JPY and AUD.
+  - **Metals and energy:** platinum, palladium, copper, Brent crude and natural gas.
+  - **Stock indices:** Dow, Russell 2000, DAX, Euro Stoxx 50, FTSE, Nikkei, Hang Seng and China A50.
+  - **Crypto:** Bitcoin and Ether.
+  - **Bonds and volatility:** US 10-year and 2-year notes, the Bund and the VIX.
+  - **Which markets count:** each market is only used if your PU Prime server offers it. The AI starts using
+    them at its next retrain (every weekend, or **Retrain AI now**).
+
+## v2.6 — Turbo is now the default (best of 768 variants)
+
+**Turbo:**
+- **Entry:** buys the first break above the highest high of the last 24 hourly bars, only while the hourly EMA20 is
+  above the EMA50.
+- **Exits:** the stop is 3 × ATR, the target is 40 × ATR, and it holds up to 15 hours with no trailing.
+- **Sizing:** risks 1 % per trade.
+
+Backtest with real Standard costs, the bot's own default config, and three separate periods:
+
+| Start | 2019 – 2023 | 2024 – mid-2025 | Aug 2025 – Nov 2026 | Worst drawdown |
+|---|---|---|---|---|
+| €50 | blown | +1,233 % | blown | — |
+| €100 | +125 % | +617 % | +529 % | −84 % |
+| €250 | +45 % | +261 % | +212 % | −57 % |
+| €500 | +72 % | +178 % | +106 % | −35 % |
+| €1,000 | +40 % | +153 % | +22 % | −46 % |
+| €5,000 | +54 % | +193 % | +54 % | −47 % |
+
+- **Account size:** every period is profitable from €100 up. €50 is too small, because one 0.01-lot trade risks
+  25–50 % of the account. The dashboard warns below €100.
+- **Daily average:** about 0.15–0.25 % per day. That is far from 1 % a day, and it comes with real drawdowns.
+- **Market direction:** Turbo is long-only, and the edge comes from gold's trends.
+
+**Free headline analyst (no API key).** The Claude API analyst is removed. Every 15 minutes the bot reads Google
+News (gold, Fed and dollar searches, which also carry Reuters, CNBC, Kitco and Bloomberg), Investing.com (three
+feeds), MarketWatch, BBC Business, the Financial Times, FXEmpire, Seeking Alpha, and the Fed and ECB press
+releases. It removes stories repeated across outlets and scores the gold impact. It only vetoes a trade on a strong
+opposite reading.
+
 ## 🚀 Turbo — the fastest €50 growth found
 
 Research on 7.9 years of data tested about 4,000 variants of 1-minute and 15-minute scalping, your dip-buying
@@ -52,6 +106,32 @@ Caveats:
 - **One full stop-loss can cost up to about half of a €50 account.**
 - **Switching it on:** press 🚀 Turbo in the dashboard. Active or Careful switch back to scalping.
 
+## Backtest by account size (Jan 2024 → May 2026, real Standard costs, lots grow with the account)
+
+| Start | 🚀 Turbo → end | Turbo max drawdown | ⚡ Active scalping | 🧺 Basket |
+|---|---|---|---|---|
+| €50 | €931 (+1,761 %) | −66 % | blown | blown |
+| €100 | €981 (+881 %) | −35 % | blown | blown |
+| €500 | €1,381 (+176 %) | −15 % | blown | blown |
+| €1,000 | €1,881 (+88 %) | −12 % | −90 % | blown |
+| €5,000 | €6,412 (+28 %) | −4 % | −86 % | blown |
+| €10,000 | €12,929 (+29 %) | −4 % | −86 % | blown |
+
+- **Small accounts swing harder:** they trade at least 0.01 lot, so each trade is a large share of the account.
+- **Larger accounts use 0.5 % risk per trade** (adjustable in Settings).
+- **Turbo depends on the market direction:** it only buys, and this period was gold's bull market.
+
+## 🧺 Basket (opt-in, demo experiment)
+
+- **How it trades:**
+  - Buys after 5 rising 5-minute candles and sells after 5 falling ones.
+  - Adds a second position 0.75 × ATR further against the trade.
+  - The whole basket closes together at the average entry ± 1 × ATR, or at the stop 6 × ATR from the first entry.
+  - It is closed after 4 hours at the latest.
+- **Backtest result:** none of 1,296 tested variants made money. This is the least-losing one: it wins about 80 %
+  of baskets but loses about $0.36 per basket on average, and it lost at every account size above.
+- **Settings:** the `basket:` section in config.yaml.
+
 ## Market analyst — "what happens next?"
 
 * **15-minute chart model:** it reads the 15-minute chart (trend, momentum, volatility, where price sits in the
@@ -59,11 +139,10 @@ Caveats:
   It is trained walk-forward and retrains every weekend. It vetoes trades it strongly disagrees with.
   Honest out-of-sample result on 2020–2026: AUC 0.521. When it is at least 55 % sure, it calls the next hour right
   55.9 % of the time.
-* **AI news analyst (optional):** add an Anthropic API key in the dashboard. Every 15 minutes while gold trades,
-  Claude (Opus 5.5) searches the latest gold news and reads the chart summary and the upcoming US releases. It
-  returns a bias, a confidence, and trade conditions (normal / caution / avoid). "Avoid" pauses new entries, and a
-  confident opposite call vetoes a trade. Each call is graded 60 minutes later and its track record is fed back to it.
-  API usage is billed to your Anthropic account.
+* **Headline analyst (free, no key):** every 15 minutes it reads the latest headlines from 11 free sources (see v2.6
+  above). It scores their impact on gold and returns a bias, a confidence, and trade conditions (normal / caution /
+  avoid). "Avoid" pauses new entries around high-impact releases, and a strong opposite reading vetoes a trade. Each
+  call is graded 60 minutes later.
 
 ## Proving real demo trades
 

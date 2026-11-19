@@ -78,7 +78,7 @@ details summary{cursor:pointer;font-weight:700;color:var(--mute);list-style:none
     <div class="status">
       <div class="big" id="headline">Loading…</div><div class="sub" id="subline"></div>
       <div class="seg" id="modeSeg"><button data-v="demo" onclick="setMode('demo')">Demo trading</button><button data-v="watch" onclick="setMode('watch')">Watch only</button></div>
-      <div class="seg" id="styleSeg"><button data-v="active" onclick="act('style',{style:'active'})">⚡ Active</button><button data-v="careful" onclick="act('style',{style:'careful'})">🛡 Careful</button><button data-v="turbo" onclick="if(confirm('Turbo: hourly trend breakouts with wide stops. In testing it doubled €50 in 40% of 30-day periods (blown 1–2%), but one full stop-loss can cost up to half the account. Switch?'))act('style',{style:'turbo'})">🚀 Turbo</button></div>
+      <div class="seg" id="styleSeg"><button data-v="turbo" onclick="act('style',{style:'perfect'})" title="Best backtested strategy: profitable in 2019–23, 2024–25 and Aug 2025–Nov 2026 from €100">🎯 Perfect</button><button data-v="active" onclick="act('style',{style:'active'})">⚡ Active</button><button data-v="careful" onclick="act('style',{style:'careful'})">🛡 Careful</button><button data-v="basket" onclick="if(confirm('Basket: trades with the last 5 five-minute candles (buys after rising, sells after falling), up to 2 positions closed together. Backtest at €100: lost the account in every period (2020–2026). Demo only. Switch?'))act('style',{style:'basket'})">🧺 Basket</button><button data-v="extreme" onclick="if(confirm('EXTREME: instant trades after 2 one-minute candles, up to 4 positions, ~40 baskets a day, no daily limit. Backtest at €100: wins 78–86% of baskets but LOST the account in every period (2020–2026). Demo only. Switch?'))act('style',{style:'extreme'})">☠️ Extreme</button></div>
     </div>
     <div class="money"><div class="l">Equity</div><div class="n" id="equity">–</div>
       <div class="l" style="margin-top:6px">Today</div><div class="d" id="today">–</div></div>
@@ -94,8 +94,8 @@ details summary{cursor:pointer;font-weight:700;color:var(--mute);list-style:none
     <div class="outlook">
       <div class="ol-model"><div class="muted" style="font-size:12px">15-minute chart model</div>
         <div class="ol-big" id="olDir">–</div><div class="gauge"><div id="olBar"></div></div><div class="note" id="olNote">Appears after the first closed 15-minute bar.</div></div>
-      <div class="ol-news"><div class="row" style="justify-content:space-between"><div class="muted" style="font-size:12px">AI news analyst (Claude · live web search)</div><span class="tag" id="nwCond"></span></div>
-        <div class="ol-big" id="nwBias">–</div><div id="nwSum" class="nwsum">Add an Anthropic API key under “Alerts &amp; AI” to let Claude read the latest gold news every 15 minutes.</div>
+      <div class="ol-news"><div class="row" style="justify-content:space-between"><div class="muted" style="font-size:12px">Headline analyst (free · Google News, no key)</div><span class="tag" id="nwCond"></span></div>
+        <div class="ol-big" id="nwBias">–</div><div id="nwSum" class="nwsum">Reads the latest gold, Fed and dollar headlines every 15 minutes once the bot runs — free, no API key.</div>
         <div class="grid2l"><ul id="nwDrv"></ul><ul id="nwRisk"></ul></div><div class="note" id="nwTrack"></div></div>
     </div></section>
 
@@ -123,11 +123,8 @@ details summary{cursor:pointer;font-weight:700;color:var(--mute);list-style:none
     <div class="row" style="margin-top:12px"><button class="btn gold" onclick="saveSettings()">Save</button>
       <span class="note">The +% exit is skipped while the AI expects the move to continue. Saving restarts a running bot.</span></div></details></section>
 
-  <section class="card s6"><details><summary>Alerts, AI &amp; MT5 login</summary>
-    <div style="margin-top:12px"><label>Anthropic API key — enables the AI news analyst (Claude Opus 5.5 with live web search)</label>
-    <div class="row"><input id="akey" type="password" placeholder="sk-ant-…" style="flex:1"><button class="btn" onclick="act('anthropic',{key:val('akey')})">Save</button></div>
-    <div class="note" id="akState">Optional. Roughly one short analysis every 15 min while gold trades — billed to your Anthropic account.</div>
-    <label style="margin-top:12px">Telegram bot token (from @BotFather)</label>
+  <section class="card s6"><details><summary>Alerts &amp; MT5 login</summary>
+    <div style="margin-top:12px"><label>Telegram bot token (from @BotFather)</label>
     <div class="row"><input id="tgToken" type="password" placeholder="123456:ABC…" style="flex:1"><button class="btn" onclick="act('telegram',{token:val('tgToken')})">Connect</button></div>
     <div class="note" id="tgState"></div>
     <div class="note">MT5 auto-login is optional if “Save password” is ticked in MT5. Stored only on this PC.</div>
@@ -171,12 +168,14 @@ const fresh=w.heartbeat_age_s!=null&&w.heartbeat_age_s<30;
 if(!loaded&&bg.background==="on")mode=bg.mode||"demo";
 let head="Ready",sub="Press START — the first time it downloads data and trains (10–30 min).",pill=["Stopped",""];
 if(s.model.exists)sub="Press START to trade your demo account in the background.";
+const smallTurbo=s.style==="turbo"&&fresh&&w.equity!=null&&w.equity<100;
 if(job.running&&/setup|Retrain/i.test(job.name)){head="Training the AI…";sub=job.name+" · "+Math.round(job.elapsed/60)+" min · keep MT5 open";pill=["Training","warn"]}
 else if(bg.background==="on"){const m=bg.mode==="demo"?"Trading your demo":"Watching (no orders)";
  if(bg.worker==="running"){head=m;sub=w.detail?w.detail:"Scanning every closed minute of gold.";pill=["Live",w.detail?"warn":"ok"]}
  else if(w.state==="retrain"){head="Weekend retrain";sub="Learning from this week's data while gold is closed.";pill=["Training","warn"]}
  else{head="Starting…";sub=bg.detail||w.detail||"Connecting to MT5…";pill=["Starting","warn"]}}
 if(s.stop_file||w.state==="killed"){head="Halted by kill switch";sub="Press “Reset safety stops”, then START.";pill=["Halted","bad"]}
+if(smallTurbo)sub+=" ⚠ Under €100: each 0.01-lot trade risks a big part of the account (backtests: €50 blown in 2 of 3 periods, €100+ profitable in all).";
 $("headline").textContent=head;$("subline").textContent=sub;$("pillTxt").textContent=pill[0];$("pill").className="pill "+pill[1];
 paintSeg("modeSeg",bg.background==="on"?bg.mode:mode);paintSeg("styleSeg",s.style);paintPower();
 const eq=fresh?w.equity:(s.check||{}).equity;$("equity").textContent=money(eq,c);
@@ -201,9 +200,7 @@ const O=fresh?(w.outlook||{}):{};if(O.p_up!=null){const up=O.p_up>=.5;$("olDir")
 const N=fresh?(w.news||{}):{};if(N.bias){$("nwBias").textContent=(N.bias==="up"?"▲ Up":N.bias==="down"?"▼ Down":"◆ Neutral")+" · "+Math.round(100*N.confidence)+"%";$("nwBias").className="ol-big "+(N.bias==="up"?"pos":N.bias==="down"?"neg":"");
  $("nwSum").textContent=N.summary||"";$("nwCond").textContent=(N.trade_conditions||"").toUpperCase();$("nwCond").className="tag "+(N.trade_conditions||"");
  const fill=(id,arr,pre)=>{const u=$(id);u.innerHTML="";(arr||[]).slice(0,4).forEach(t=>{const li=document.createElement("li");li.textContent=pre+t;u.appendChild(li)})};fill("nwDrv",N.drivers,"");fill("nwRisk",N.risks,"⚠ ");
- const T=N.track||{};$("nwTrack").textContent="Updated "+(N.time||"").slice(11,16)+" UTC"+(T.graded?" · track record "+Math.round(100*T.hit_rate)+"% right over "+T.graded+" graded calls":" · its calls are graded after 60 min and fed back to it")}
-else if(s.news_key){$("nwBias").textContent="…";$("nwSum").textContent=bg.background==="on"?"Analysing the latest news — first read within ~15 minutes.":"Starts reading the news when the bot runs.";}
-$("akState").textContent=s.news_key?"AI news analyst enabled ✓ (key stored only on this PC)":"Optional. Roughly one short analysis every 15 min while gold trades — billed to your Anthropic account.";
+ const T=N.track||{};$("nwTrack").textContent=(N.stations?Object.keys(N.stations).length+" stations read · ":"")+"Updated "+(N.time||"").slice(11,16)+" UTC"+(T.graded?" · track record "+Math.round(100*T.hit_rate)+"% right over "+T.graded+" graded calls":" · its calls are graded after 60 min and fed back to it")}
 if(job.lines&&job.lines.length){$("jobCard").style.display="";$("jobTitle").textContent=job.name+(job.running?" — running":job.rc===0?" — done ✓":" — finished with errors");const pre=$("job"),bt=pre.scrollTop+pre.clientHeight>=pre.scrollHeight-20;pre.textContent=job.lines.join("\n");if(bt)pre.scrollTop=pre.scrollHeight}
 const m=s.model;let mt=m.exists?("AI trained "+(m.trained_at||"").slice(0,16).replace("T"," ")+" UTC."):"AI not trained yet.";
 if(s.tuned.adopted&&s.tuned.validate){const v=s.tuned.validate;mt+=" Tuned rules active (validation "+v.n+" trades, account "+(v.growth_pct>=0?"+":"")+v.growth_pct.toFixed(1)+"%)."}

@@ -5,11 +5,9 @@
    (UP/DOWN probability). Trained walk-forward, so backtests only ever see out-of-sample forecasts;
    retrained every weekend on all saved data (it trains on itself as the data grows).
 
-2. NewsAgent (optional, needs an Anthropic API key) — Claude reads the CURRENT gold news with live web search,
-   together with a numeric summary of the 15-minute chart and upcoming high-impact events, and returns a
-   structured outlook: bias, confidence, trade conditions (normal / caution / avoid), drivers, risks.
-   Every call is stored and graded 60 minutes later; its recent track record is fed back into the next prompt
-   so it calibrates itself.
+2. Free headline analyst (news_local.py, no API key) — reads the latest gold / Fed / dollar headlines from
+   Google News RSS every 15 minutes, scores them with a gold-specific lexicon and returns bias, confidence and
+   trade conditions (normal / caution / avoid). Every call is graded 60 minutes later.
 
 Both feed the entry decision: a strongly opposing outlook vetoes a trade; "avoid" pauses new entries.
 """
@@ -17,8 +15,6 @@ from __future__ import annotations
 
 import json
 import logging
-import sqlite3
-import threading
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -156,136 +152,6 @@ def outlook_for_m1(p15: pd.Series, m1_index: pd.DatetimeIndex) -> pd.DataFrame:
     p = al["o_p"].to_numpy(float)
     return pd.DataFrame({"outlook_dir": np.where(np.isnan(p), 0, np.where(p >= 0.5, 1, -1)),
                          "outlook_conf": np.where(np.isnan(p), 0.0, np.maximum(p, 1 - p))}, index=m1_index)
-
-
-# ============================================================================ news agent
-SCHEMA = {
-    "type": "object",
-    "properties": {
-        "bias": {"type": "string", "enum": ["up", "down", "neutral"]},
-        "confidence": {"type": "number"},
-        "trade_conditions": {"type": "string", "enum": ["normal", "caution", "avoid"]},
-        "summary": {"type": "string"},
-        "drivers": {"type": "array", "items": {"type": "string"}},
-        "risks": {"type": "array", "items": {"type": "string"}},
-    },
-    "required": ["bias", "confidence", "trade_conditions", "summary", "drivers", "risks"],
-    "additionalProperties": False,
-}
-
-SYSTEM = """You are a gold (XAU/USD) intraday market analyst supporting an automated scalping bot on a demo account.
-Every 15 minutes you get a numeric snapshot of the 15-minute chart, the bot's own model forecast, upcoming
-high-impact US events, and your own recent track record. Search the web for the latest gold-relevant news
-(Fed and rate expectations, US data surprises, dollar and yields, geopolitics, central-bank buying) from the
-last few hours, then judge the most likely direction of XAU/USD over the NEXT 60 MINUTES.
-
-Be calibrated: confidence 0.5 means no edge; above 0.7 only with a clear, fresh catalyst aligned with price
-action. Use trade_conditions "avoid" when a major release or breaking headline makes the next hour a
-coin-flip with outsized risk, "caution" for elevated uncertainty, otherwise "normal". Learn from your track
-record: if recent calls were poor, lower your confidence. Keep the summary to two sentences."""
-
-
-class NewsAgent:
-    def __init__(self, data_dir: Path, model: str = "claude-opus-5-5", interval_min: int = 15, effort: str = "medium"):
-        self.data_dir, self.model, self.interval, self.effort = data_dir, model, interval_min, effort
-        self.db = data_dir / "xau.db"
-        self.latest: dict | None = None
-        self.busy = False
-        self.last_run = 0.0
-        self._init_db()
-
-    def _init_db(self):
-        con = sqlite3.connect(self.db)
-        con.execute("CREATE TABLE IF NOT EXISTS analyst_calls (time TEXT PRIMARY KEY, price REAL, bias TEXT, "
-                    "confidence REAL, conditions TEXT, summary TEXT, payload TEXT, price_after REAL, correct INTEGER)")
-        con.commit()
-        con.close()
-
-    @staticmethod
-    def available() -> bool:
-        import os
-        try:
-            import anthropic  # noqa: F401
-        except ImportError:
-            return False
-        return bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"))
-
-    def due(self) -> bool:
-        return not self.busy and time.time() - self.last_run >= self.interval * 60
-
-    def track_record(self, price_now: float | None = None, now: datetime | None = None) -> dict:
-        """Grade calls older than 60 min against the price at the time they were graded; return stats."""
-        con = sqlite3.connect(self.db)
-        now = now or datetime.now(timezone.utc)
-        if price_now is not None:
-            for t, p0, bias in con.execute("SELECT time, price, bias FROM analyst_calls WHERE correct IS NULL").fetchall():
-                if datetime.fromisoformat(t) <= now - timedelta(minutes=60) and bias != "neutral":
-                    ok = int((price_now - p0) * (1 if bias == "up" else -1) > 0)
-                    con.execute("UPDATE analyst_calls SET price_after=?, correct=? WHERE time=?", (price_now, ok, t))
-            con.commit()
-        rows = con.execute("SELECT time, bias, confidence, price, price_after, correct FROM analyst_calls "
-                           "WHERE correct IS NOT NULL ORDER BY time DESC LIMIT 40").fetchall()
-        con.close()
-        n = len(rows)
-        return dict(graded=n, hit_rate=round(sum(r[5] for r in rows) / n, 3) if n else None,
-                    recent=[dict(time=r[0][:16], bias=r[1], conf=r[2], move=round((r[4] or 0) - r[3], 2),
-                                 correct=bool(r[5])) for r in rows[:8]])
-
-    def run_async(self, snapshot: dict):
-        if self.busy:
-            return
-        self.busy, self.last_run = True, time.time()
-        threading.Thread(target=self._run, args=(snapshot,), daemon=True).start()
-
-    def _run(self, snapshot: dict):
-        try:
-            res = self.analyse(snapshot)
-            if res:
-                self.latest = res
-        except Exception as e:  # noqa: BLE001
-            log.warning("news agent failed: %s", e)
-        finally:
-            self.busy = False
-
-    def analyse(self, snapshot: dict) -> dict | None:
-        import anthropic
-        track = self.track_record(snapshot.get("price"))
-        prompt = ("Market snapshot (UTC):\n" + json.dumps(snapshot, default=str, indent=1) +
-                  "\n\nYour recent track record (graded 60 min after each call):\n" + json.dumps(track, indent=1) +
-                  "\n\nSearch the latest gold news, then give your outlook for the next 60 minutes.")
-        client = anthropic.Anthropic()
-        messages = [{"role": "user", "content": prompt}]
-        resp = None
-        for _ in range(4):  # server tools may pause a long turn; continue it
-            resp = client.beta.messages.create(
-                model=self.model, max_tokens=16000, system=SYSTEM, messages=messages,
-                tools=[{"type": "web_search_20260209", "name": "web_search", "max_uses": 4}],
-                output_config={"effort": self.effort, "format": {"type": "json_schema", "schema": SCHEMA}},
-                betas=["server-side-fallback-2026-07-01"], fallbacks="default",
-            )
-            if resp.stop_reason != "pause_turn":
-                break
-            messages = [{"role": "user", "content": prompt}, {"role": "assistant", "content": resp.content}]
-        if resp is None or resp.stop_reason == "refusal":
-            log.warning("news agent: no answer (%s)", getattr(resp, "stop_reason", None))
-            return None
-        text = "".join(b.text for b in resp.content if b.type == "text")
-        try:
-            out = json.loads(text)
-        except ValueError:
-            log.warning("news agent returned non-JSON output")
-            return None
-        out["confidence"] = float(min(max(out.get("confidence", 0.5), 0.0), 1.0))
-        out["time"] = datetime.now(timezone.utc).isoformat()
-        out["price"] = snapshot.get("price")
-        con = sqlite3.connect(self.db)
-        con.execute("INSERT OR REPLACE INTO analyst_calls (time, price, bias, confidence, conditions, summary, payload) "
-                    "VALUES (?,?,?,?,?,?,?)", (out["time"], out["price"], out["bias"], out["confidence"],
-                                               out["trade_conditions"], out["summary"], json.dumps(out)))
-        con.commit()
-        con.close()
-        log.info("news agent: %s %.2f %s — %s", out["bias"], out["confidence"], out["trade_conditions"], out["summary"])
-        return out
 
 
 def chart_snapshot(x15: pd.DataFrame, p_up: float | None, events_next: list[str], price: float) -> dict:

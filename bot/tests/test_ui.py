@@ -48,7 +48,7 @@ def test_dashboard_server(tmp_path, monkeypatch):
         code, st = call(port, "/api/state")
         st = json.loads(st)
         assert code == 200 and st["background"]["background"] == "off" and "settings" in st
-        assert st["settings"]["equity_tp_pct"] == 3.0
+        assert st["settings"]["equity_tp_pct"] == 0.0 and st["style"] == "turbo"  # Turbo is the default
         # actions need the session token …
         assert call(port, "/api/stop", {}, token=None)[0] == 403
         assert call(port, "/api/stop", {}, token="wrong")[0] == 403
@@ -60,3 +60,23 @@ def test_dashboard_server(tmp_path, monkeypatch):
         assert "equity_tp_pct: 1.5" in saved and "max_daily_trades: 500" in saved  # clamped
     finally:
         srv.shutdown()
+
+
+def test_style_presets_are_complete_and_detected(tmp_path, monkeypatch):
+    import yaml
+    from config import load_config
+    monkeypatch.setattr(ui, "DATA", tmp_path)
+    ui._write_user({"risk": {"risk_per_trade_pct": 9}})                 # an old manual tweak …
+    ui._write_user(ui.STYLES["perfect"], replace=True)                   # … is cleared by choosing a style
+    assert "risk_per_trade_pct" not in (tmp_path / "user.yaml").read_text()
+    for style, mode, tf in (("extreme", "basket", "m1"), ("basket", "basket", "m5"), ("perfect", "turbo", None)):
+        ui._write_user(ui.STYLES[style], replace=True)
+        (tmp_path / "config.yaml").write_text((ROOT / "config.yaml").read_text())
+        (tmp_path / "data").mkdir(exist_ok=True)
+        (tmp_path / "data" / "user.yaml").write_text((tmp_path / "user.yaml").read_text())
+        cfg = load_config(tmp_path / "config.yaml", use_tuned=False)
+        assert cfg.strategy.mode == mode
+        if tf:
+            assert cfg.basket.candles_tf == tf and cfg.risk.max_daily_trades >= 100000
+        else:
+            assert cfg.strategy.sl_atr == 3.0 and cfg.strategy.tp_atr == 40.0 and not cfg.strategy.ai_gate
