@@ -222,6 +222,25 @@ def build_features(m1: pd.DataFrame, cfg=None, correlated: dict[str, pd.Series] 
     for col in f.columns:
         if col not in keep64 and f[col].dtype == np.float64:
             f[col] = f[col].astype(np.float32)
+
+    # --- regime / momentum features ---
+    # 30-min and 1-hr return (basis points for float32 safety)
+    f["ret30"] = f["close"].pct_change(30).astype(np.float32) * 1e4
+    f["ret60"] = f["close"].pct_change(60).astype(np.float32) * 1e4
+
+    # volatility skew (20-bar) - captures asymmetry of returns
+    f["vol_skew"] = f["close"].rolling(20).apply(
+        lambda s: pd.Series(s).skew(), raw=True
+    ).astype(np.float32).replace([np.inf, -np.inf], np.nan)
+
+    # VWAP deviation in percentage points
+    f["vwap_dev_pct"] = (f["close"] - f["vwap"]).astype(np.float32) / f["vwap"].replace(0, np.nan) * 100.0
+
+    # volume-weighted 20-bar moving average
+    vwma_num = (f["close"] * f["tick_volume"]).rolling(20).sum()
+    vwma_den = f["tick_volume"].rolling(20).replace(0, np.nan).sum()
+    f["vwma_20"] = (vwma_num / vwma_den).astype(np.float32).replace([np.inf, -np.inf], np.nan)
+
     return f
 
 

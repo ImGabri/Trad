@@ -83,7 +83,32 @@ class Job:
 
     def state(self) -> dict:
         return dict(name=self.name, running=self.running, rc=self.rc, lines=list(self.lines)[-200:],
-                    elapsed=round(time.time() - self.started) if self.started else 0)
+                    elapsed=round(time.time() - self.started) if self.started else 0,
+                    #Live state fields (populated by main.py via /api/state updates):
+                    ai_conf=None, ai_dir=None, rule_signal=None, session=None,
+                    spread_ratio=None, atr_m5=None, entry_blocked=False)
+
+def _json_serialize(d):
+    """Recursively convert objects (datetime, np.int64, etc.) to JSON-serializable types."""
+    if isinstance(d, dict):
+        return {k: _json_serialize(v) for k, v in d.items()}
+    if isinstance(d, (list, tuple)):
+        return [_json_serialize(v) for v in d]
+    if d is None or isinstance(d, (bool, int, float, str)):
+        return d
+    # datetime
+    if hasattr(d, 'isoformat'):
+        try:
+            return d.isoformat()
+        except Exception:
+            return str(d)
+    # numpy types
+    if hasattr(d, 'item'):
+        try:
+            return d.item()
+        except Exception:
+            pass
+    return str(d)
 
 
 JOB = Job()
@@ -251,8 +276,10 @@ def action(name: str, body: dict) -> str:
 
 # --------------------------------------------------------------------------------- server
 class Handler(BaseHTTPRequestHandler):
-    token = ""
+    token = secrets.token_urlsafe(24)
     last_seen = time.time()
+    live_state: dict = dict(ai_conf=None, ai_dir=None, rule_signal=None, session=None,
+                              spread_ratio=None, atr_m5=None, entry_blocked=False)
 
     def log_message(self, *a):  # silence default stderr logging (pythonw has no console)
         pass
@@ -277,7 +304,15 @@ class Handler(BaseHTTPRequestHandler):
             html = (APP / "assets" / "dashboard.html").read_text(encoding="utf-8").replace("__TOKEN__", self.token)
             return self._send(200, html.encode(), "text/html")
         if self.path == "/api/state":
-            return self._send(200, json.dumps(state(), default=str).encode())
+            # Merge dashboard-managed state with live state from main.py (shared JSON file)
+            base = state()
+            try:
+                shared = json.loads((APP / "data" / "state_live.json").read_text(encoding="utf-8"))
+                base.update(shared)
+            except Exception:
+                pass
+            base.update(Handler.live_state)
+            return self._send(200, json.dumps(_json_serialize(base), default=str).encode())
         if self.path == "/api/ping":
             return self._send(200, b'{"app":"xau-scalper"}')
         if self.path == "/favicon.ico" and (APP / "assets" / "icon.ico").exists():

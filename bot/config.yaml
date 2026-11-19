@@ -53,6 +53,7 @@ strategy:
   fib_swing_bars_m5: 48      # swing range for fib levels (4h of M5)
   m1_trigger_bars: 3         # consecutive M1 candles in bias direction
   require_rising_volume: true
+  vol_confirm_mult: 1.2      # vol filter: require above-median vol when above mult×median
   atr_period: 14
   tp_atr: 1.5
   sl_atr: 1.0

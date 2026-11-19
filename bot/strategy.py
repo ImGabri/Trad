@@ -52,6 +52,12 @@ def m1_trigger(f: pd.DataFrame, cfg) -> pd.Series:
         v = f["tick_volume"]
         rising = pd.concat([v.shift(i) > v.shift(i + 1) for i in range(n - 1)], axis=1).all(axis=1)
         up, dn = up & rising, dn & rising
+    # VOLUME CONFIRMATION: require above-median volume for trend triggers
+    vol_med = f["tick_volume"].rolling(20).median()
+    high_vol = f["tick_volume"] > vol_med * cfg.strategy.vol_confirm_mult
+    # only apply volume filter when bias is non-zero (trend-seeking)
+    up = up & (cfg.strategy.vol_confirm_mult <= 1.0 | high_vol)
+    dn = dn & (cfg.strategy.vol_confirm_mult <= 1.0 | high_vol)
     return pd.Series(np.select([up, dn], [1, -1], 0), index=f.index)
 
 

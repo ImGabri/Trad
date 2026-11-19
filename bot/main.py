@@ -354,7 +354,17 @@ def cli():
     if a.cmd == "doctor":
         return doctor(cfg)
     if a.cmd == "prepare":
-        return prepare(cfg, a.years, not a.no_dukascopy, a.trials)
+        result = prepare(cfg, a.years, not a.no_dukascopy, a.trials)
+        # Write live state for UI dashboard
+        try:
+            import json as _json
+            state_data = dict(ai_conf=None, ai_dir=None, rule_signal=None,
+                              session=None, spread_ratio=None, atr_m5=None,
+                              entry_blocked=False, status="complete")
+            (APP / "data" / "state_live.json").write_text(_json.dumps(state_data, indent=2))
+        except Exception:
+            pass
+        return result
     if a.cmd == "import-csv":
         return import_csv(cfg, a.path, a.utc_offset)
     if a.cmd in ("watch", "demo"):
