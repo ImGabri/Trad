@@ -153,11 +153,7 @@ STYLES = {  # one click instead of editing numbers
                "sessions": {"asia_min_confidence": 0.55}},
     "careful": {"strategy": {"confidence_threshold": 0.65, "ai_only_min_conf": 0.0},
                 "sessions": {"asia_min_confidence": 0.75}},
-    # 🚀 Turbo — winner of the €50 race (150 random 30-day windows 2024–26): doubled €50 in 40 %, blown 1–2 %
-    "turbo": {"strategy": {"mode": "turbo", "ai_gate": False, "sl_atr": 6.0, "tp_atr": 30.0, "trail_trigger_atr": 8.0,
-                           "trail_distance_atr": 6.0, "time_stop_minutes": 600, "equity_tp_pct": 0.0, "ai_only_min_conf": 0.0},
-              "risk": {"min_lot_max_risk_pct": 70, "max_concurrent": 1, "daily_loss_limit_pct": 30, "survival_multiplier": 1.0},
-              "analyst": {"veto_conf": 0.0}},
+    "turbo": {"strategy": {"mode": "turbo"}},  # exits/risk come from the config.yaml `turbo:` section
 }
 STYLES["basket"] = {"strategy": {"mode": "basket"}, "risk": {"max_daily_trades": 60}}
 for _k in ("active", "careful"):  # leaving Turbo/Basket restores the scalping engine
@@ -212,7 +208,6 @@ def state() -> dict:
                    valid_auc=meta.get("valid_auc"), win_rate=meta.get("backtest_win_rate")),
         tuned=dict(adopted=tuned, validate=chosen), report=(DATA / "report" / "report.html").exists(),
         telegram=bool(env.get("TELEGRAM_TOKEN") and env.get("TELEGRAM_CHAT_ID")),
-        news_key=bool(env.get("ANTHROPIC_API_KEY")),
         mt5_login=env.get("MT5_LOGIN", ""), mt5_server=env.get("MT5_SERVER", ""),
         stop_file=(DATA / "STOP").exists(), settings=_user_settings(),
         check=_read_json(DATA / "mt5_check.json"), style=_style(),
@@ -337,13 +332,6 @@ def action(name: str, body: dict) -> str:
         return "Saved on this PC (.env). The bot will log MT5 in by itself after a reboot."
     if name == "settings":
         return _save_settings(body)
-    if name == "anthropic":
-        key = str(body.get("key", "")).strip()
-        if key and not key.startswith("sk-ant-"):
-            return "That doesn't look like an Anthropic API key (it starts with sk-ant-)."
-        _write_env({"ANTHROPIC_API_KEY": key} if key else {"ANTHROPIC_API_KEY": ""})
-        return ("Saved — Claude will read live gold news every 15 minutes." if key else "News agent turned off.") + \
-            _restart_if_running()
     if name == "style":
         style = body.get("style")
         if style not in STYLES:
@@ -351,7 +339,7 @@ def action(name: str, body: dict) -> str:
         _write_user(STYLES[style])
         msg = {"active": "Active: trades every setup the AI agrees with.",
                "careful": "Careful: only high-confidence setups.",
-               "turbo": "🚀 Turbo: hourly trend breakouts, wide stops — best €50 growth in testing (high risk per trade).",
+               "turbo": "🚀 Turbo: hourly trend breakouts — best mode in 7.9 years of testing (use €100+).",
                "basket": "🧺 Basket: follows the last candles and adds legs; whole basket closes together (lost money in backtests)."}
         return msg[style] + _restart_if_running()
     if name == "test_trade":

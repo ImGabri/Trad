@@ -62,7 +62,7 @@ strategy:   # defaults tuned for a €50 PU Prime Standard account (least-losing
   trail_trigger_atr: 0.5
   trail_distance_atr: 0.75
   time_stop_minutes: 20
-  mode: scalp                # scalp (rules + AI) | turbo (hourly trend breakout — dashboard 🚀 Turbo)
+  mode: turbo                # turbo (default, best in testing) | scalp (rules + AI) | basket — dashboard style buttons
   ai_gate: true
   confidence_threshold: 0.5   # "Active" demo style: trade every rule setup the AI agrees with (Careful = 0.65)
   # Equity take-profit: close a trade once it is +X % of account equity in profit — unless the AI still
@@ -109,6 +109,16 @@ news:
   post_window_min: [5, 15]   # T+5 .. T+15: SL × 1.2
   post_sl_mult: 1.2
 
+turbo:                       # 🚀 Turbo (default) — applied on top of everything when strategy.mode = turbo
+  # Hourly 24-bar breakout, long-only, with the hourly EMA20/50 trend. Best of 768 tested variants: profitable in
+  # 2019–23, 2024–25 AND Aug 2025–Nov 2026 for accounts from €100 (at 1 % risk). €50 blew up in 2 of 3 periods.
+  strategy: {ai_gate: false, sl_atr: 3.0, tp_atr: 40.0, trail_trigger_atr: 99.0, trail_distance_atr: 99.0,
+             time_stop_minutes: 900, equity_tp_pct: 0.0, ai_only_min_conf: 0.0}
+  risk: {risk_per_trade_pct: 1.0, min_lot_max_risk_pct: 70, max_concurrent: 1, daily_loss_limit_pct: 30,
+         survival_multiplier: 1.0}
+  analyst: {veto_conf: 0.0}
+  sessions: {asia_enabled: true}   # breakouts in Asia hours were part of the tested edge
+
 basket:                      # 🧺 Basket mode (dashboard) — opt-in. Least-losing of 1,296 tested variants; it still LOST
                              # ~$0.36 per basket (80 % wins) in 2020–2025 backtests. Demo experiment only.
   candles_tf: m5             # m1 | m5 — candles used for the direction
@@ -124,11 +134,9 @@ basket:                      # 🧺 Basket mode (dashboard) — opt-in. Least-lo
 analyst:                     # "what will probably happen next" — see analyst.py
   enabled: true
   veto_conf: 0.55            # skip a trade when the 15-min outlook points the other way with ≥ this confidence
-  news_agent: auto           # Claude reads live gold news every 15 min (auto = on when an Anthropic API key is set)
-  news_model: claude-opus-5-5
+  news_agent: on             # free headline analyst (Google News RSS, no API key) — off to disable
   news_interval_min: 15
-  news_effort: medium
-  news_veto_conf: 0.65       # skip a trade when the news agent expects the opposite with ≥ this confidence
+  news_veto_conf: 0.75       # skip a trade only when headlines strongly point the other way (not backtestable → cautious)
 
 history:
   years: 7                   # training history (broker bars + public OANDA data for older years)

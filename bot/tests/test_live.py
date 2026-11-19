@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT)); sys.path.insert(0, str(ROOT / "tests"))
 from synthetic import synthetic_m1  # noqa: E402
 import fake_mt5  # noqa: E402
 
-LOOSE = {"strategy": {"m15_adx_min": 0, "level_tolerance_atr": 50, "m1_trigger_bars": 1,
+LOOSE = {"strategy": {"mode": "scalp", "m15_adx_min": 0, "level_tolerance_atr": 50, "m1_trigger_bars": 1,
                       "require_rising_volume": False, "confidence_threshold": 0.5},
          "sessions": {"asia_min_confidence": 0.5}}
 

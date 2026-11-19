@@ -48,7 +48,7 @@ def test_dashboard_server(tmp_path, monkeypatch):
         code, st = call(port, "/api/state")
         st = json.loads(st)
         assert code == 200 and st["background"]["background"] == "off" and "settings" in st
-        assert st["settings"]["equity_tp_pct"] == 3.0
+        assert st["settings"]["equity_tp_pct"] == 0.0 and st["style"] == "turbo"  # Turbo is the default
         # actions need the session token …
         assert call(port, "/api/stop", {}, token=None)[0] == 403
         assert call(port, "/api/stop", {}, token="wrong")[0] == 403

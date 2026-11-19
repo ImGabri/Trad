@@ -21,7 +21,8 @@ from config import commission_per_side
 from data import MT5Connection, Store, acct_per_usd, mt5, remember_terminal, tick_microstructure
 from features import build_features
 from learning import OutcomeModel, entry_features
-from analyst import M15Analyst, NewsAgent, chart_snapshot, m15_frame
+from analyst import M15Analyst, chart_snapshot, m15_frame
+from news_local import LocalNewsAgent
 from monitor import Status, Telegram, fmt_entry, fmt_exit
 from news import load_events, refresh_calendar
 from risk import RiskState, min_required_equity, position_size, survival_breached
@@ -46,10 +47,8 @@ class Runner:
         self.outcome = OutcomeModel.load(self.learn_dir)  # learns from the bot's own trades
         self.analyst = M15Analyst.load(self.data_dir / "model")  # 15-minute chart outlook
         an = getattr(cfg, "analyst", None)
-        want_news = an is not None and str(getattr(an, "news_agent", "auto")).lower() not in ("off", "false", "0")
-        self.news = (NewsAgent(self.data_dir, getattr(an, "news_model", "claude-opus-5-5"),
-                               int(getattr(an, "news_interval_min", 15)), getattr(an, "news_effort", "medium"))
-                     if want_news and NewsAgent.available() else None)
+        want_news = an is not None and str(getattr(an, "news_agent", "on")).lower() not in ("off", "false", "0")
+        self.news = LocalNewsAgent(self.data_dir, int(getattr(an, "news_interval_min", 15))) if want_news else None
         self.outlook: dict = {}
         self.news_track: dict = {}
         bt_wr = float(self.model.meta.get("backtest_win_rate", 50.0))
@@ -603,7 +602,11 @@ class Runner:
         if self.news is not None and self.news.due():
             now = pd.Timestamp.now(tz="UTC")
             upcoming = [str(t)[:16] for t in self.events[(self.events >= now) & (self.events <= now + pd.Timedelta(hours=6))]]
-            self.news.run_async(chart_snapshot(x15, p, upcoming, price))
+            snap = chart_snapshot(x15, p, upcoming, price)
+            nxt, prv = self.events[self.events >= now], self.events[self.events < now]
+            snap["minutes_to_event"] = (nxt[0] - now).total_seconds() / 60 if len(nxt) else None
+            snap["minutes_since_event"] = (now - prv[-1]).total_seconds() / 60 if len(prv) else None
+            self.news.run_async(snap)
             self.news_track = self.news.track_record(price)
 
     def _fresh_news(self) -> dict | None:
