@@ -187,6 +187,44 @@ class MT5Connection:
         return out.sort_index()
 
 
+def remember_terminal(data_dir: Path):
+    """Save the running terminal's path so the background worker can launch MT5 itself after a reboot."""
+    import json
+    ti = mt5.terminal_info() if mt5 else None
+    if ti is None:
+        return
+    p = Path(data_dir) / "local.json"
+    try:
+        cur = json.loads(p.read_text()) if p.exists() else {}
+    except ValueError:
+        cur = {}
+    exe = str(Path(ti.path) / "terminal64.exe")
+    if cur.get("terminal_path") != exe:
+        cur["terminal_path"] = exe
+        p.write_text(json.dumps(cur, indent=2))
+
+
+def acct_per_usd(symbol: str) -> float:
+    """Account-currency value of a $1 P&L (e.g. ≈0.86 for a EUR account). MT5 does the FX conversion."""
+    if mt5 is None:
+        return 1.0
+    acc = mt5.account_info()
+    if acc is None or str(acc.currency).upper() == "USD":
+        return 1.0
+    si, tick = mt5.symbol_info(symbol), mt5.symbol_info_tick(symbol)
+    if si is None or tick is None or not tick.bid:
+        return 1.0
+    prof = mt5.order_calc_profit(mt5.ORDER_TYPE_BUY, symbol, 1.0, tick.bid, tick.bid + 1.0)
+    return float(prof) / si.trade_contract_size if prof else 1.0
+
+
+def account_equity_usd(symbol: str) -> float | None:
+    acc = mt5.account_info() if mt5 else None
+    if acc is None:
+        return None
+    return float(acc.equity) / acct_per_usd(symbol)
+
+
 def _market_closed_now() -> bool:
     now = datetime.now(timezone.utc)
     return now.weekday() == 5 or (now.weekday() == 4 and now.hour >= 22) or (now.weekday() == 6 and now.hour < 22)
@@ -242,7 +280,7 @@ class Store:
     CREATE TABLE IF NOT EXISTS trades (ticket INTEGER PRIMARY KEY, symbol TEXT, side TEXT, lots REAL,
         open_time TEXT, open_price REAL, sl REAL, tp REAL, spread_at_entry REAL, slippage REAL,
         confidence REAL, session TEXT, reason_open TEXT, close_time TEXT, close_price REAL,
-        pnl REAL, commission REAL, reason_close TEXT, mode TEXT);
+        pnl REAL, commission REAL, reason_close TEXT, mode TEXT, features TEXT);
     CREATE TABLE IF NOT EXISTS predictions (time TEXT PRIMARY KEY, p_up REAL, p_down REAL,
         confidence REAL, model_version TEXT, signal INTEGER, acted INTEGER);
     """
@@ -252,6 +290,10 @@ class Store:
         self.conn = sqlite3.connect(str(path), check_same_thread=False)
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.executescript(self.SCHEMA)
+        cols = {r[1] for r in self.conn.execute("PRAGMA table_info(trades)")}
+        if "features" not in cols:  # databases created by older versions
+            self.conn.execute("ALTER TABLE trades ADD COLUMN features TEXT")
+            self.conn.commit()
 
     def save_bars(self, symbol: str, tf: str, df: pd.DataFrame):
         if df.empty:

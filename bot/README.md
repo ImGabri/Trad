@@ -1,52 +1,67 @@
-# TradV2 — XAUUSD AI Scalper for PUPrime MT5 (Windows, demo)
+# TradV2 — XAUUSD AI Scalper for PU Prime MT5 (Windows 11, demo)
 
-A complete, ready-to-run bot: multi-timeframe scalping rules (M15 bias → M5 key level → M1 trigger),
-a LightGBM AI confidence filter, hard risk rules, news-aware trading, Telegram alerts and a Windows
-background runner. Design: `ARCHITECTURE.md`. All settings: `config.yaml`.
+A self-learning gold scalper with a one-click dashboard. It trades XAUUSD on your PU Prime MT5 demo, runs in
+the background, restarts at every Windows logon and retrains itself every weekend on everything it has collected.
 
-## Quick start (Windows PC, no VPS needed)
+## Start (3 steps)
 
-1. Install the **PU Prime MT5** terminal, log in to your **demo** and tick *Save password*. Click **Algo Trading**
-   so it turns green. Leave MT5 open.
-2. Download **TradV2-XAUUSD-Scalper-Windows-x64.zip**, extract it to a permanent folder (e.g. `C:\TradV2`) and
-   double-click **START.cmd**. Python and every library are bundled — nothing to install.
-3. Menu **1** — checks the connection and shows the gold symbol (`XAUUSD.s` on Standard accounts), spread, margin and history.
-4. *(optional)* Menu **13** — import the Codex build's `market_data.zip` and `markets.csv`. This adds its ticks, context markets and BLS calendar.
-5. Menu **2** — downloads up to 3 years of M1 history from MT5, trains the AI walk-forward and backtests it against
-   buy-and-hold, an EMA cross and random entries. Opens `data\report\report.html`.
-6. Menu **3** (watch, no orders) or **4** (demo orders) runs in the window. Menu **5** runs demo trading in the background.
-   It restarts at every Windows logon, so you can close the window. Menu **7** shows status and **8** stops it.
-7. Menu **11** — Telegram alerts. Paste your @BotFather token and message the bot once. Commands:
-   `/status /pause /resume /stop`.
+1. Install **PU Prime MT5**, log in to your **demo** account with **Save password** ticked, and click
+   **Algo Trading** so it turns green.
+2. Download **TradV2-XAUUSD-Scalper-Windows-x64.zip**, right-click → **Extract All…** to e.g. `C:\TradV2`, and
+   double-click **START.cmd**. Python and all libraries are included.
+3. In the dashboard that opens, press **▶ Start trading**.
+   The first start downloads ~7 years of gold history, trains the AI and tunes the rules (10–30 min). Then the bot
+   starts trading on its own.
 
-**Kill switch:** use menu **9**, Telegram `/stop`, or create an empty file `data\STOP`. Each one closes all bot positions and
-halts the bot. Menu **10** clears it.
+The setup also creates an **XAU Scalper** shortcut on your desktop and in the Start menu. You can close the browser
+tab: the bot keeps running, stops Windows from going to sleep while it trades, and starts again after every logon
+(launching MT5 itself if needed). **■ Stop** turns all of that off.
+**Close all & halt** is the kill switch. Telegram `/stop` or an empty `data\STOP` file do the same.
 
-The PC must stay on, awake and logged in with MT5 open. Set Windows *Power → Sleep: Never*. Orders always carry a
-broker-side SL and TP, so open trades stay protected if the PC goes down.
+## How it trades
 
-## Safety rails (hard-coded in `risk.py`, tunable in `config.yaml`)
+| | |
+|---|---|
+| Entries | M15 trend (EMA 50/200 + ADX) → price at a key level (VWAP, prior H1 high/low, Fibonacci 0.618/0.786) → M1 momentum trigger. LightGBM AI confidence gate. Optional AI-only fast entries. |
+| 1 % exit | Closes a trade at **+1 % of equity**. If the AI still expects the move to continue, it locks half of that gain with the stop instead and lets it run, leaving as soon as the AI stops agreeing. Checked twice a second. |
+| Other exits | ATR take-profit, ATR stop-loss (always at the broker), trailing stop, time stop, Friday 21:00 UTC flat. |
+| News | Verified 2019–2026 US calendar (NFP, CPI, PPI, FOMC, retail sales, GDP, PCE, JOLTS, ISM) plus a live ForexFactory feed. No entries 15→5 min before an event (stops tightened). One AI "news scalp" in the ±5 min window. Wider stops for 15 min after. |
+| Risk | 0.5 % per trade. Small-account mode trades 0.01 lot when that risks ≤ 10 % (a €50 start). 15 % daily loss halt, max 2 open / 20 trades a day, spread and slippage filters, survival hard stop, no averaging down, demo accounts only. |
 
-0.5 % risk per trade · 2 % daily loss halt · max 2 positions / 20 trades a day · survival hard stop when equity ≤ 1.5 ×
-(margin + SL loss of 0.01 lot) · spread filter (> 2× 20-bar average) · 3-pip slippage cap · no averaging down · flat by
-Friday 21:00 UTC · no entries Fri 21–22 and Sun 22–23 UTC · demo accounts only.
+## How it learns from itself
 
-## Account type matters
+* **Keeps all data:** your broker's bars, every tick spread, every AI prediction and every trade with its entry
+  conditions go into `data\xau.db`. Older years come from a public OANDA M1 dataset, cached in `data\hf_cache`.
+  Nothing is thrown away, and every retrain uses more data than the last one.
+* **Measures its real costs:** it learns the spread by hour of the week and its actual slippage from your own
+  fills, and backtests use those numbers.
+* **Learns which of its own trades win:** a self-learning gate is first trained on thousands of simulated
+  walk-forward trades, then updated after every real closed trade (real trades count 5×). It is only switched on
+  if it improves results on trades it has never seen. It then vetoes entries it expects to lose.
+* **Retrains weekly:** while gold is closed at the weekend it downloads the new data, retrains the AI and re-tunes
+  the rules. New rules are adopted only if they are profitable on both the tuning period and a separate validation
+  period. Each old model is archived in `data\models\`, and every retrain is logged in `data\learning_log.jsonl`.
+* **Drift guard:** it pauses entries if the live win rate falls 15 points below the backtest (`/resume` to override).
 
-`XAUUSD.s` (Standard) has no commission but a fixed **$0.32** spread. An **ECN** demo (5–15¢ spread + $1/side/lot) costs about
-half as much per trade, which matters a lot for scalping. If you open one, set `account_type: ECN` in `config.yaml` and the bot
-finds the right symbol on its own.
+## Honest expectations
 
-## Command line
+On a Standard account every trade pays a fixed **$0.32** spread. With €50 the smallest trade (0.01 lot = 1 oz)
+already risks ~7 % at a normal stop. The research on 7.9 years of data (see the report) shows how hard it is to beat
+those costs. The bot adopts tuned rules only when they pass the validation test, and the dashboard shows whether
+they did. Treat the demo as the real test. The bot refuses real-money accounts.
+
+## Files
+
+`START.cmd` opens the dashboard · `MENU.cmd` opens the advanced text menu · `config.yaml` holds every setting (the
+dashboard's settings override it via `data\user.yaml`) · `data\report\report.html` is the latest backtest report ·
+`data\logs\` keeps JSON logs for 7 days.
+
+Command line (from the extracted folder):
 
 ```bash
 runtime\python.exe main.py doctor
-runtime\python.exe main.py prepare --years 3
-runtime\python.exe main.py import-codex C:\path\market_data.zip C:\path\markets.csv
-runtime\python.exe main.py demo
+runtime\python.exe main.py prepare --years 7
 runtime\python.exe main.py background start-demo
 runtime\python.exe main.py kill
 runtime\python.exe main.py smoke
 ```
-
-Logs are JSON lines in `data\logs` (7-day rotation). Trades, predictions and the tick spread log are in `data\xau.db` (SQLite).

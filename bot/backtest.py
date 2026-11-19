@@ -4,7 +4,9 @@ Conventions
 - Bars are BID prices (as MT5 stores them). Ask = bid + spread.
 - A decision is made at the close of bar i and filled at the OPEN of bar i+1.
 - Long: buy at ask (+ slippage), exit at bid. Short: sell at bid (− slippage), exit at ask.
-- Stops/time-stops/forced flats pay slippage; take-profits are limit fills (no slippage).
+- Stops/time-stops/forced flats/equity take-profit pay slippage; ATR take-profits are limit fills.
+- Equity take-profit: at +equity_tp_pct of entry equity the trade is closed, unless the AI (latest closed
+  bar) still expects the move to continue; then the SL locks part of the gain and it keeps running.
 - If a bar touches both SL and TP, SL is assumed to fill first (conservative).
 - Costs: per-bar spread (or a flat $0.10 when missing) + commission per side per lot + slippage in pips.
 """
@@ -32,8 +34,11 @@ class Pos:
     best: float
     spread_in: float
     conf: float
-    kind: str  # "normal" | "news"
+    kind: str  # "normal" | "news" | "ai"
     risk_usd: float = 0.0
+    eq_level: float = float("nan")  # exit price at which net P&L = equity_tp_pct of equity at entry
+    eq_hold: bool = False           # level reached but the AI expected more → profit locked, still open
+    decide_i: int = -1              # bar whose close produced the entry decision
 
 
 def run_backtest(f: pd.DataFrame, sig: pd.DataFrame, cfg, ai_dir: pd.Series | None = None,
@@ -51,8 +56,9 @@ def run_backtest(f: pd.DataFrame, sig: pd.DataFrame, cfg, ai_dir: pd.Series | No
     atr5 = f["m5_atr"].to_numpy(float)
     rule = (entry_signal if entry_signal is not None else sig["rule_signal"]).to_numpy(int)
     has_ai = ai_conf is not None
-    conf = ai_conf.reindex(idx).to_numpy(float) if has_ai else np.ones(n)
+    conf = ai_conf.reindex(idx).fillna(0).to_numpy(float) if has_ai else np.ones(n)
     adir = ai_dir.reindex(idx).fillna(0).to_numpy(int) if has_ai else rule.copy()
+    bias = sig["bias"].to_numpy(int) if "bias" in sig else np.zeros(n, int)
     session = sig["session"].to_numpy()
     blocked = sig["entry_blocked"].to_numpy(bool)
     must_flat = sig["must_flat"].to_numpy(bool)
@@ -64,6 +70,18 @@ def run_backtest(f: pd.DataFrame, sig: pd.DataFrame, cfg, ai_dir: pd.Series | No
     slip = bt.slippage_pips * ins.pip_size
     comm = commission_per_side(cfg)
     cs = ins.contract_size
+    eq_pct = float(getattr(st, "equity_tp_pct", 0) or 0)
+    hold_conf = float(getattr(st, "equity_tp_hold_conf", 0.55))
+    lock_frac = float(getattr(st, "equity_tp_lock_frac", 0.5))
+    ai_only = float(getattr(st, "ai_only_min_conf", 0) or 0) if entry_signal is None else 0.0
+
+    # bars where an entry is even possible; all other bars without positions are skipped (big speed-up)
+    cand = rule != 0
+    if has_ai:
+        cand |= phase == "event"
+        if ai_only > 0:
+            cand |= conf >= ai_only
+    cand &= ~blocked
 
     equity_cash = float(bt.initial_equity)
     risk = RiskState(cfg)
@@ -74,6 +92,10 @@ def run_backtest(f: pd.DataFrame, sig: pd.DataFrame, cfg, ai_dir: pd.Series | No
     pending = None  # (side, sl_mult, tp_mult, conf, kind, decided_i)
     news_used: set[int] = set()
     stop_reason = None
+
+    def favours(i: int, side: int) -> bool:
+        """The AI (as of bar i close) expects price to keep moving in `side`'s direction."""
+        return has_ai and i >= 0 and adir[i] == side and conf[i] >= hold_conf
 
     def mtm(i):
         u = 0.0
@@ -87,9 +109,11 @@ def run_backtest(f: pd.DataFrame, sig: pd.DataFrame, cfg, ai_dir: pd.Series | No
         gross = (px - p.entry) * p.side * p.lots * cs
         fee = 2 * comm * p.lots
         equity_cash += gross - fee
-        trades.append(dict(open_time=idx[p.open_i], close_time=idx[i], side=p.side, lots=p.lots,
+        trades.append(dict(open_time=idx[p.open_i], decide_time=idx[max(p.decide_i, 0)], close_time=idx[i],
+                           side=p.side, lots=p.lots,
                            entry=p.entry, exit=px, sl=p.sl, tp=p.tp, pnl=gross - fee, commission=fee,
-                           hold_min=(i - p.open_i + 1), reason=reason, r=(gross - fee) / p.risk_usd if p.risk_usd else 0.0, conf=p.conf, kind=p.kind,
+                           hold_min=(i - p.open_i + 1), reason=reason,
+                           r=(gross - fee) / p.risk_usd if p.risk_usd else 0.0, conf=p.conf, kind=p.kind,
                            spread_in=p.spread_in, session=session[p.open_i]))
 
     def exit_px(p: Pos, i: int, at: float | None = None) -> float:
@@ -98,6 +122,9 @@ def run_backtest(f: pd.DataFrame, sig: pd.DataFrame, cfg, ai_dir: pd.Series | No
         return bid - slip if p.side > 0 else bid + spr[i] + slip
 
     for i in range(n):
+        if not positions and pending is None and not cand[i]:
+            eq_curve[i] = equity_cash
+            continue
         # ---------- fill pending order at this bar's open
         if pending is not None and stop_reason is None:
             side, slm, tpm, cf, kind, di = pending
@@ -108,8 +135,10 @@ def run_backtest(f: pd.DataFrame, sig: pd.DataFrame, cfg, ai_dir: pd.Series | No
             lots = position_size(equity_cash, sl_d, cs, rk.risk_per_trade_pct, ins.lot_step, ins.min_lot,
                                  ins.max_lot, comm, getattr(rk, "min_lot_max_risk_pct", 0))
             if lots > 0:
+                eq_level = (entry + side * (equity_cash * eq_pct / 100 + 2 * comm * lots) / (lots * cs)
+                            if eq_pct > 0 else float("nan"))
                 positions.append(Pos(side, entry, entry - side * sl_d, entry + side * tp_d, lots, i, a,
-                                     entry, spr[i], cf, kind, sl_d * lots * cs))
+                                     entry, spr[i], cf, kind, sl_d * lots * cs, eq_level, False, di))
                 risk.trades_today += 1
                 if kind == "news":
                     news_used.add(ev_id[di])
@@ -131,6 +160,21 @@ def run_backtest(f: pd.DataFrame, sig: pd.DataFrame, cfg, ai_dir: pd.Series | No
                 close(p, i, p.tp, "tp")
                 positions.remove(p)
                 continue
+            # equity take-profit: out at +X % of equity unless the AI expects more
+            if eq_pct > 0 and not p.eq_hold:
+                touched = h[i] >= p.eq_level if p.side > 0 else l[i] + spr[i] <= p.eq_level
+                if touched:
+                    if favours(i - 1, p.side):
+                        p.eq_hold = True
+                        lock = p.entry + lock_frac * (p.eq_level - p.entry)
+                        if (lock - p.sl) * p.side > 0:
+                            p.sl = lock
+                    else:
+                        px = (max(o[i], p.eq_level) - slip if p.side > 0
+                              else min(o[i] + spr[i], p.eq_level) + slip)
+                        close(p, i, px, "equity_tp")
+                        positions.remove(p)
+                        continue
             # trailing (uses this bar's extreme, applies from next bar on)
             p.best = max(p.best, h[i]) if p.side > 0 else min(p.best, l[i] + spr[i])
             if (p.best - p.entry) * p.side >= st.trail_trigger_atr * p.atr:
@@ -144,6 +188,14 @@ def run_backtest(f: pd.DataFrame, sig: pd.DataFrame, cfg, ai_dir: pd.Series | No
 
         # ---------- bar-close state
         risk.on_bar(days[i].date(), mtm(i) if i else equity_cash)
+
+        # holding past the equity target: leave as soon as the AI no longer expects more
+        for p in list(positions):
+            if p.eq_hold:
+                above = c[i] >= p.eq_level if p.side > 0 else c[i] + spr[i] <= p.eq_level
+                if above and not favours(i, p.side):
+                    close(p, i, exit_px(p, i), "equity_tp")
+                    positions.remove(p)
         eq = mtm(i)
 
         if must_flat[i] and positions:
@@ -180,12 +232,13 @@ def run_backtest(f: pd.DataFrame, sig: pd.DataFrame, cfg, ai_dir: pd.Series | No
         exposure[i] = bool(positions)
 
         # ---------- entry decision at bar close → fill next bar
-        if stop_reason or gap_next[i] > 5:
+        if stop_reason or gap_next[i] > 5 or not cand[i]:
             continue
         side, slm, tpm, kind, _ = decide_entry(
             cfg, rule=int(rule[i]), ai_dir=int(adir[i]), conf=float(conf[i]), has_ai=has_ai,
             session=session[i], blocked=bool(blocked[i]), phase=phase[i], event_id=int(ev_id[i]),
-            news_used=news_used, spread_ratio=float(spr_ratio[i]), atr_m5=float(atr5[i]), slippage_usd=slip)
+            news_used=news_used, spread_ratio=float(spr_ratio[i]), atr_m5=float(atr5[i]), slippage_usd=slip,
+            bias=int(bias[i]), ai_only_min_conf=ai_only)
         if side == 0:
             continue
         ok, _ = risk.can_open(len(positions), side,

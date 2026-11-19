@@ -66,10 +66,14 @@ def obv(df: pd.DataFrame) -> pd.Series:
 
 
 def slope(s: pd.Series, n: int) -> pd.Series:
-    """OLS slope over the last n points (vectorised)."""
+    """OLS slope over the last n points (vectorised with a convolution; NaN until n points exist)."""
     x = np.arange(n) - (n - 1) / 2
     w = x / (x ** 2).sum()
-    return s.rolling(n).apply(lambda v: float(np.dot(v, w)), raw=True)
+    v = s.to_numpy(float)
+    out = np.full(len(v), np.nan)
+    if len(v) >= n:
+        out[n - 1:] = np.convolve(v, w[::-1], mode="valid")
+    return pd.Series(out, index=s.index)
 
 
 def session_vwap(df: pd.DataFrame, reset_hour_utc: int = 22) -> pd.Series:
@@ -201,6 +205,12 @@ def build_features(m1: pd.DataFrame, cfg=None, correlated: dict[str, pd.Series] 
         left = pd.DataFrame(index=f.index + pd.Timedelta(minutes=1))
         f[f"{name}_chg5"] = pd.merge_asof(left, close_t, left_index=True, right_index=True,
                                           direction="backward", tolerance=pd.Timedelta(minutes=10))["v"].values
+    # float32 halves memory (years of M1 bars); prices/spread stay float64 for exact P&L maths
+    keep64 = {"open", "high", "low", "close", "spread", "vwap", "m5_swing_hi", "m5_swing_lo", "h1_high", "h1_low",
+              "m15_ema_fast", "m15_ema_slow"}
+    for col in f.columns:
+        if col not in keep64 and f[col].dtype == np.float64:
+            f[col] = f[col].astype(np.float32)
     return f
 
 

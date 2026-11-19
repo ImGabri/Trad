@@ -81,6 +81,7 @@ class Fake:
         return out
 
     def order_calc_margin(self, t, s, v, px): return px * 100 * v / 500
+    def order_calc_profit(self, t, s, v, a, b): return (b - a) * 100 * v
 
     def positions_get(self, symbol=None): return list(self.positions.values())
 
@@ -101,7 +102,7 @@ class Fake:
         side = 1 if req["type"] == ORDER_TYPE_BUY else -1
         p = NS(ticket=self.next_ticket, symbol=req["symbol"], type=0 if side > 0 else 1, volume=req["volume"],
                price_open=req["price"], sl=req["sl"], tp=req["tp"], magic=req["magic"], time=int(self.t[self.cur]),
-               profit=0.0)
+               profit=0.0, swap=0.0, identifier=self.next_ticket)
         self.positions[p.ticket] = p
         return NS(retcode=TRADE_RETCODE_DONE, comment="", order=p.ticket, price=req["price"], volume=req["volume"])
 

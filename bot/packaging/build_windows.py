@@ -17,11 +17,19 @@ from zipfile import ZIP_DEFLATED, ZipFile
 BOT = Path(__file__).resolve().parents[1]
 PY = "3.12.10"
 ASSET = "TradV2-XAUUSD-Scalper-Windows-x64.zip"
-APP_FILES = ["main.py", "config.py", "config.yaml", "data.py", "features.py", "strategy.py", "risk.py",
-             "backtest.py", "ai_model.py", "execution.py", "live.py", "monitor.py", "news.py", "prepare.py",
-             "background.py", "START.cmd", "VERSION", "requirements.txt", ".env.example", "README.md",
-             "ARCHITECTURE.md", "tests/synthetic.py", "tests/fake_mt5.py", "tests/test_pipeline.py",
-             "tests/test_live.py", "tools/probe_symbols.py"]
+TOP_FILES = ["START.cmd", "MENU.cmd", "VERSION", "config.yaml", "requirements.txt", ".env.example", "README.md",
+             "ARCHITECTURE.md"]
+
+
+def app_files() -> list[str]:
+    """Everything the app needs: all modules, assets, tests (self-test), tools — never data/ or dist/."""
+    files = TOP_FILES + sorted(p.name for p in BOT.glob("*.py"))
+    for sub, pat in (("assets", "*"), ("tests", "*.py"), ("tools", "*.py")):
+        files += sorted(f"{sub}/{p.name}" for p in (BOT / sub).glob(pat) if p.is_file())
+    return files
+
+
+APP_FILES = app_files()
 
 
 def main():
@@ -50,7 +58,8 @@ def main():
                         "MetaTrader5"], check=True)
         if sys.platform == "win32":
             exe = str(rt / "python.exe")
-            subprocess.run([exe, "-B", "-c", "import main, MetaTrader5, pandas, lightgbm, yaml, matplotlib"], cwd=app, check=True)
+            subprocess.run([exe, "-B", "-c", "import main, MetaTrader5, pandas, lightgbm, yaml, matplotlib, sklearn, pyarrow"],
+                           cwd=app, check=True)
             subprocess.run([exe, "-B", "main.py", "smoke"], cwd=app, check=True)
             shutil.rmtree(app / "data_smoke", ignore_errors=True)
         zpath = dist / ASSET

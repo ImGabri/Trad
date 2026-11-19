@@ -96,12 +96,14 @@ def doctor(cfg):
     return 0
 
 
-def prepare(cfg, years: float, dukascopy: bool = True, trials: int = 60):
+def prepare(cfg, years: float, dukascopy: bool = True, trials: int = 120, quiet: bool = False):
     from prepare import download, research
-    print(f"Downloading up to {years:g} years of M1 history (PUPrime MT5{' + Dukascopy for older data' if dukascopy else ''}) …")
-    m1, corr = download(cfg, DATA, years, dukascopy_back=dukascopy)
-    research(cfg, DATA, m1, corr, trials=trials)
-    open_report()
+    say = logging.getLogger("prepare").info if quiet else print
+    say(f"Downloading {years:g} years of gold history (your PU Prime bars + public OANDA history for older years) …")
+    m1, corr = download(cfg, DATA, years, say=say, dukascopy_back=dukascopy)
+    research(cfg, DATA, m1, corr, say=say, trials=trials)
+    if not quiet:
+        open_report()
 
 
 def import_csv(cfg, path: str, offset: float):
@@ -119,12 +121,12 @@ def import_codex(cfg, paths):
     print("Imported. Option 2 merges this with MT5 history.")
 
 
-def run_live(cfg, mode: str, keep_running=lambda: True):
+def run_live(cfg, mode: str, keep_running=lambda: True, auto_retrain: bool = False):
     from live import Runner
     if not (DATA / "model" / "model.txt").exists():
         raise SystemExit("No AI model yet — run option 2 (prepare) first.")
     (DATA / "STOP").unlink(missing_ok=True)
-    Runner(cfg, APP, mode, keep_running).run()
+    return Runner(cfg, APP, mode, keep_running, auto_retrain).run()
 
 
 def worker():
@@ -143,9 +145,19 @@ def worker():
     status = Status(DATA / "status.json")
     while active():
         try:
-            run_live(cfg, background.read_control(APP)["mode"], active)
-            if (DATA / "STOP").exists():
+            if not (DATA / "model" / "model.txt").exists():  # started before the first training finished
+                status.update(state="retrain", detail="first-time training")
+                prepare(cfg, cfg.history.years, quiet=True)
+            why = run_live(cfg, background.read_control(APP)["mode"], active, auto_retrain=True)
+            if (DATA / "STOP").exists() or why == "killed":
                 break
+            if why == "retrain":  # weekend: learn from everything collected this week, then carry on
+                status.update(state="retrain", detail="weekly retrain on all saved data")
+                log.info("weekly retrain starting")
+                prepare(cfg, cfg.history.years, quiet=True)
+                delay = 5
+                cfg = load_config(APP / "config.yaml")
+                continue
         except SystemExit as e:
             status.update(state="waiting", detail=str(e))
         except Exception as e:  # noqa: BLE001
@@ -318,13 +330,18 @@ def cli():
     sub.add_parser("worker"); sub.add_parser("kill"); sub.add_parser("reset"); sub.add_parser("smoke")
     sub.add_parser("status")
     p = sub.add_parser("prepare"); p.add_argument("--years", type=float, default=7)
-    p.add_argument("--no-dukascopy", action="store_true"); p.add_argument("--trials", type=int, default=60)
+    p.add_argument("--no-dukascopy", action="store_true"); p.add_argument("--trials", type=int, default=120)
+    sub.add_parser("ui")
     p = sub.add_parser("import-csv"); p.add_argument("path"); p.add_argument("--utc-offset", type=float, default=0)
     p = sub.add_parser("import-codex"); p.add_argument("paths", nargs="+")
     p = sub.add_parser("background"); p.add_argument("action", choices=["start-demo", "start-watch", "status", "stop"])
     a = ap.parse_args()
-    if a.cmd in (None, "menu"):
+    if a.cmd == "menu":
         return menu()
+    if a.cmd in (None, "ui"):
+        cfg_and_logs(console=False)
+        import ui
+        return ui.serve()
     if a.cmd == "worker":
         return worker()
     if a.cmd == "smoke":
