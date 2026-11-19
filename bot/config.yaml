@@ -109,6 +109,18 @@ news:
   post_window_min: [5, 15]   # T+5 .. T+15: SL × 1.2
   post_sl_mult: 1.2
 
+basket:                      # 🧺 Basket mode (dashboard) — opt-in. Least-losing of 1,296 tested variants; it still LOST
+                             # ~$0.36 per basket (80 % wins) in 2020–2025 backtests. Demo experiment only.
+  candles_tf: m5             # m1 | m5 — candles used for the direction
+  candles: 5                 # last N candles all the same colour → direction
+  follow: true               # true: trade with the candles; false: fade them
+  step_atr: 0.75              # add a leg every step×ATR against the last entry
+  max_entries: 2             # legs per basket (incl. the first)
+  tp_atr: 1.0                # whole basket closes at average entry ± tp×ATR
+  sl_atr: 6.0                # basket stop, measured from the FIRST entry
+  hold_minutes: 240          # close the basket after this long
+  equity_per_001: 50         # 0.01 lot per this much equity (account currency) — lots grow with the account
+
 analyst:                     # "what will probably happen next" — see analyst.py
   enabled: true
   veto_conf: 0.55            # skip a trade when the 15-min outlook points the other way with ≥ this confidence

@@ -118,6 +118,14 @@ def modify_sl(pos, new_sl: float) -> bool:
     return bool(res and res.retcode == mt5.TRADE_RETCODE_DONE)
 
 
+def modify_tp(pos, new_tp: float) -> bool:
+    """Move a position's take-profit (basket mode keeps every leg's TP at the basket target)."""
+    info = mt5.symbol_info(pos.symbol)
+    res = _send_demo(dict(action=mt5.TRADE_ACTION_SLTP, symbol=pos.symbol, position=pos.ticket,
+                          sl=pos.sl, tp=_round(new_tp, info), magic=MAGIC))
+    return bool(res and res.retcode == mt5.TRADE_RETCODE_DONE)
+
+
 def close_position(pos, deviation_points: int, comment: str = "close") -> Fill:
     info, tick = mt5.symbol_info(pos.symbol), mt5.symbol_info_tick(pos.symbol)
     buy = pos.type == mt5.POSITION_TYPE_BUY

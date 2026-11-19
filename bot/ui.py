@@ -159,7 +159,8 @@ STYLES = {  # one click instead of editing numbers
               "risk": {"min_lot_max_risk_pct": 70, "max_concurrent": 1, "daily_loss_limit_pct": 30, "survival_multiplier": 1.0},
               "analyst": {"veto_conf": 0.0}},
 }
-for _k in ("active", "careful"):  # leaving Turbo restores the scalping engine
+STYLES["basket"] = {"strategy": {"mode": "basket"}, "risk": {"max_daily_trades": 60}}
+for _k in ("active", "careful"):  # leaving Turbo/Basket restores the scalping engine
     STYLES[_k].setdefault("strategy", {}).update(mode="scalp", ai_gate=True)
 
 
@@ -189,8 +190,8 @@ def _trades(limit: int = 15) -> tuple[list, list]:
 def _style() -> str:
     from config import load_config
     st = load_config(APP / "config.yaml").strategy
-    if str(getattr(st, "mode", "scalp")) == "turbo":
-        return "turbo"
+    if str(getattr(st, "mode", "scalp")) in ("turbo", "basket"):
+        return str(st.mode)
     thr = st.confidence_threshold
     return "active" if thr <= 0.55 else "careful"
 
@@ -350,7 +351,8 @@ def action(name: str, body: dict) -> str:
         _write_user(STYLES[style])
         msg = {"active": "Active: trades every setup the AI agrees with.",
                "careful": "Careful: only high-confidence setups.",
-               "turbo": "🚀 Turbo: hourly trend breakouts, wide stops — best €50 growth in testing (high risk per trade)."}
+               "turbo": "🚀 Turbo: hourly trend breakouts, wide stops — best €50 growth in testing (high risk per trade).",
+               "basket": "🧺 Basket: follows the last candles and adds legs; whole basket closes together (lost money in backtests)."}
         return msg[style] + _restart_if_running()
     if name == "test_trade":
         return ("Placing a 0.01-lot test trade on your demo…" if JOB.start("Test trade on your demo account",

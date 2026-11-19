@@ -258,7 +258,26 @@ class Runner:
         tick = mt5.symbol_info_tick(self.gold)
         now = time.time()
         phase = self._phase_now() if live else "none"
+        basket = self._basket_mode()
+        if basket and live:
+            b = self.state.get("basket") or {}
+            if b and now - b.get("open_ts", now) >= float(self.cfg.basket.hold_minutes) * 60:
+                for p in live.values():
+                    mm = meta.get(p.ticket) or {}
+                    mm["close_reason"] = "basket_time"
+                    self._set_meta(p.ticket, mm | {k: v for k, v in dict(atr=2.0, open_ts=now, best=p.price_open,
+                                                                         side=1 if p.type == 0 else -1).items() if k not in mm})
+                    ex.close_position(p, self.dev_points, "basket time")
+                self.tg.send("🧺 Basket closed by time stop.")
+                live = {}
         for t, p in live.items():
+            if basket:  # basket legs share broker-side SL/TP; no per-leg trailing or equity exit
+                if t not in meta:
+                    self._set_meta(t, dict(atr=float(self.last_feat["m5_atr"]) if self.last_feat is not None else 2.0,
+                                           open_ts=p.time - self.conn.server_offset.total_seconds(), best=p.price_open,
+                                           side=1 if p.type == mt5.POSITION_TYPE_BUY else -1, kind="basket", conf=0,
+                                           tp=p.tp, sl=p.sl))
+                continue
             m = meta.get(t) or dict(atr=float(self.last_feat["m5_atr"]) if self.last_feat is not None else 2.0,
                                     open_ts=p.time - self.conn.server_offset.total_seconds(), best=p.price_open,
                                     side=1 if p.type == mt5.POSITION_TYPE_BUY else -1, kind="adopted", conf=0)
@@ -403,6 +422,10 @@ class Runner:
                 self.risk.hard_stop = True
                 self.tg.send(f"⛔ SURVIVAL HARD STOP: equity {equity:.2f} ≤ {cfg.risk.survival_multiplier}× "
                              f"{req:.2f}. All closed, no new entries.", block=True)
+        if self._basket_mode():
+            self._basket_step(row, s, equity, positions, bar_time, p_up, conf)
+            self._save_state()
+            return
         news_used = set(self.state.get("news_used", []))
         side, slm, tpm, kind, why = decide_entry(
             cfg, rule=int(s["rule_signal"]), ai_dir=ai_dir, conf=conf, has_ai=True, session=s["session"],
@@ -478,6 +501,89 @@ class Runner:
         self.tg.send(fmt_entry(dict(info, price=fill.price, sl=sl, tp=tp)))
         if slip > self.cfg.risk.max_slippage_pips * self.cfg.instrument.pip_size:
             self.tg.send(f"⚠️ Slippage {slip:.2f} exceeded cap on #{fill.ticket}")
+
+    # ------------------------------------------------------------------ 🧺 basket mode
+    def _basket_mode(self) -> bool:
+        return self.mode == "demo" and str(getattr(self.cfg.strategy, "mode", "scalp")).lower() == "basket"
+
+    def _basket_step(self, row, s, equity: float, positions: list, bar_time, p_up: float, conf: float):
+        """Open a basket in the direction of the last N candles; add a leg every step×ATR against the last entry
+        (up to max_entries); every leg shares the basket stop (from the first entry) and the basket target
+        (average entry ± tp×ATR), so the whole basket closes together."""
+        b, cfg = self.cfg.basket, self.cfg
+        a = float(row["m5_atr"])
+        tick = mt5.symbol_info_tick(self.gold)
+        st = self.state.get("basket")
+        decision = "basket: waiting for a candle run"
+        if not positions:
+            self.state.pop("basket", None)
+            side = int(s["rule_signal"])
+            if side == 0:
+                pass
+            elif s["entry_blocked"] or s["news_phase"] in ("pre", "event"):
+                decision = "basket: blocked (session / news)"
+            elif float(row["spread_ratio"]) > cfg.risk.spread_filter_mult:
+                decision = "basket: spread too wide"
+            elif self.paused or self.risk.hard_stop or self.risk.daily_halt or \
+                    self.risk.trades_today >= cfg.risk.max_daily_trades:
+                decision = "basket: paused by a safety rule"
+            else:
+                lots = round(self.info.volume_min * max(1, int(equity // float(b.equity_per_001))), 2)
+                sl_d, tp_d = float(b.sl_atr) * a, float(b.tp_atr) * a
+                fill = ex.open_market(self.gold, side, lots, sl_d, tp_d, self.dev_points, "xau-v2 basket 1")
+                if fill.ok:
+                    self.state["basket"] = dict(side=side, first=fill.price, last=fill.price, n=1, open_ts=time.time(),
+                                                sl=fill.price - side * sl_d, lots=lots)
+                    self._record_leg(fill, side, lots, fill.price - side * sl_d, fill.price + side * tp_d, a, conf, s)
+                    decision = f"basket: opened {'BUY' if side > 0 else 'SELL'} {lots}"
+                    self.tg.send(f"🧺 Basket {'BUY' if side > 0 else 'SELL'} {lots} @ {fill.price:.2f} "
+                                 f"(last {b.candles} {b.candles_tf.upper()} candles)")
+                else:
+                    decision = f"basket: MT5 rejected ({fill.retcode})"
+        else:
+            if not st:  # restart while a basket was open: rebuild from the positions
+                side = 1 if positions[0].type == 0 else -1
+                st = dict(side=side, first=positions[0].price_open, last=positions[-1].price_open, n=len(positions),
+                          open_ts=min(p.time for p in positions) - self.conn.server_offset.total_seconds(),
+                          sl=positions[0].sl, lots=positions[0].volume)
+                self.state["basket"] = st
+            side = st["side"]
+            px = tick.bid if side > 0 else tick.ask
+            decision = f"basket: {st['n']} leg(s) open"
+            margin = mt5.order_calc_margin(mt5.ORDER_TYPE_BUY if side > 0 else mt5.ORDER_TYPE_SELL, self.gold,
+                                           st["lots"], tick.ask) or 0.0
+            acc = mt5.account_info()
+            if st["n"] < int(b.max_entries) and (px - st["last"]) * side <= -float(b.step_atr) * a \
+                    and acc and acc.margin_free > 1.5 * margin:
+                entry = tick.ask if side > 0 else tick.bid
+                fill = ex.open_market(self.gold, side, st["lots"], abs(entry - st["sl"]), float(b.tp_atr) * a,
+                                      self.dev_points, f"xau-v2 basket {st['n'] + 1}")
+                if fill.ok:
+                    st["n"] += 1
+                    st["last"] = fill.price
+                    legs = ex.bot_positions(self.gold)
+                    avg = sum(p.price_open * p.volume for p in legs) / sum(p.volume for p in legs)
+                    tp = avg + side * float(b.tp_atr) * a
+                    for p in legs:
+                        ex.modify_tp(p, tp)
+                    self._record_leg(fill, side, st["lots"], st["sl"], tp, a, conf, s)
+                    decision = f"basket: added leg {st['n']}, new target {tp:.2f}"
+                    self.tg.send(f"🧺 Basket leg {st['n']} @ {fill.price:.2f}, target {tp:.2f}, stop {st['sl']:.2f}")
+        self.last_decision = dict(time=bar_time.strftime("%Y-%m-%d %H:%M"), close=round(float(row["close"]), 2),
+                                  bias=int(s["bias"]), rule=int(s["rule_signal"]), p_up=round(p_up, 3), conf=round(conf, 3),
+                                  session=str(s["session"]), news=str(s["news_phase"]), decision=decision)
+        log.info("bar %s %s", bar_time.strftime("%H:%M"), decision)
+
+    def _record_leg(self, fill, side, lots, sl, tp, atr_v, conf, s):
+        self.risk.trades_today += 1
+        tick = mt5.symbol_info_tick(self.gold)
+        self._set_meta(fill.ticket, dict(atr=atr_v, open_ts=time.time(), best=fill.price, side=side, kind="basket",
+                                         conf=conf, tp=tp, sl=sl, slip=(fill.price - fill.requested) * side))
+        self.store.record_trade(ticket=fill.ticket, symbol=self.gold, side="BUY" if side > 0 else "SELL", lots=lots,
+                                open_time=datetime.now(timezone.utc).isoformat(), open_price=fill.price, sl=sl, tp=tp,
+                                spread_at_entry=(tick.ask - tick.bid) if tick else None,
+                                slippage=(fill.price - fill.requested) * side, confidence=conf, session=str(s["session"]),
+                                reason_open="basket", mode=self.mode)
 
     def _update_outlook(self, m1: pd.DataFrame, corr: dict, price: float):
         """On every closed 15-minute bar: model outlook for the next hour; kick off the news agent if due."""

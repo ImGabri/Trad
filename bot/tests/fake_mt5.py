@@ -34,8 +34,9 @@ class Fake:
 
     def account_info(self):
         eq = self.balance + sum(self._pnl(p) for p in self.positions.values())
+        used = sum(p.volume * 100 * p.price_open / 500 for p in self.positions.values())
         return NS(login=1, server="PUPrime-Demo", balance=self.balance, equity=eq, leverage=500, currency="USD",
-                  trade_mode=0, margin_mode=2, company="PU Prime")
+                  trade_mode=0, margin_mode=2, company="PU Prime", margin=used, margin_free=eq - used)
 
     def terminal_info(self): return NS(trade_allowed=True, ping_last=20000, path="C:/MT5", name="MT5", build=5000)
     def symbols_get(self): return [NS(name="XAUUSD", trade_mode=4), NS(name="XAUUSD247", trade_mode=4), NS(name="USDX", trade_mode=4)]
@@ -96,6 +97,7 @@ class Fake:
         if req["action"] == TRADE_ACTION_SLTP:
             p = self.positions[req["position"]]
             p.sl = req["sl"]
+            p.tp = req.get("tp", p.tp)
             return NS(retcode=TRADE_RETCODE_DONE, comment="", order=0, price=0, volume=0)
         if "position" in req:
             p = self.positions.pop(req["position"])

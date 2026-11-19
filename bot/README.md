@@ -52,6 +52,32 @@ Caveats:
 - **One full stop-loss can cost up to about half of a €50 account.**
 - **Switching it on:** press 🚀 Turbo in the dashboard. Active or Careful switch back to scalping.
 
+## Backtest by account size (Jan 2024 → May 2026, real Standard costs, lots grow with the account)
+
+| Start | 🚀 Turbo → end | Turbo max drawdown | ⚡ Active scalping | 🧺 Basket |
+|---|---|---|---|---|
+| €50 | €931 (+1,761 %) | −66 % | blown | blown |
+| €100 | €981 (+881 %) | −35 % | blown | blown |
+| €500 | €1,381 (+176 %) | −15 % | blown | blown |
+| €1,000 | €1,881 (+88 %) | −12 % | −90 % | blown |
+| €5,000 | €6,412 (+28 %) | −4 % | −86 % | blown |
+| €10,000 | €12,929 (+29 %) | −4 % | −86 % | blown |
+
+- **Small accounts swing harder:** they trade at least 0.01 lot, so each trade is a large share of the account.
+- **Larger accounts use 0.5 % risk per trade** (adjustable in Settings).
+- **Turbo depends on the market direction:** it only buys, and this period was gold's bull market.
+
+## 🧺 Basket (opt-in, demo experiment)
+
+- **How it trades:**
+  - Buys after 5 rising 5-minute candles and sells after 5 falling ones.
+  - Adds a second position 0.75 × ATR further against the trade.
+  - The whole basket closes together at the average entry ± 1 × ATR, or at the stop 6 × ATR from the first entry.
+  - It is closed after 4 hours at the latest.
+- **Backtest result:** none of 1,296 tested variants made money. This is the least-losing one: it wins about 80 %
+  of baskets but loses about $0.36 per basket on average, and it lost at every account size above.
+- **Settings:** the `basket:` section in config.yaml.
+
 ## Market analyst — "what happens next?"
 
 * **15-minute chart model:** it reads the 15-minute chart (trend, momentum, volatility, where price sits in the
