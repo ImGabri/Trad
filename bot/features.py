@@ -79,9 +79,19 @@ def slope(s: pd.Series, n: int) -> pd.Series:
 def session_vwap(df: pd.DataFrame, reset_hour_utc: int = 22) -> pd.Series:
     """VWAP anchored at the daily gold session open (22:00 UTC), weighted by tick volume."""
     tp = (df["high"] + df["low"] + df["close"]) / 3
+    # Ensure index is DatetimeIndex for proper day grouping
+    if not isinstance(df.index, pd.DatetimeIndex):
+        df = df.copy()
+        df.index = pd.DatetimeIndex(df.index)
     day = (df.index - pd.Timedelta(hours=reset_hour_utc)).floor("D")
-    v = df["tick_volume"].clip(lower=1)
-    return (tp * v).groupby(day).cumsum() / v.groupby(day).cumsum()
+    v = df["tick_volume"].clip(lower=1).astype(float)
+    tp = tp.astype(float)
+    # Cast day to category to avoid object-dtype cumsum error in pandas
+    day = day.astype("category")
+    cp = (tp * v).groupby(day).cumsum()
+    cv = v.groupby(day).cumsum()
+    # Avoid division by zero
+    return cp / cv.replace(0, np.nan)
 
 
 # ---------------------------------------------------------------------------- resampling
