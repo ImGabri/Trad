@@ -100,7 +100,11 @@ def _older_history(cfg, data_dir: Path, store, mt5_df: pd.DataFrame, start: date
         older["spread"] = CostModel.load(data_dir / "learning" / "costs.json").spread_for(older.index,
                                                                                             cfg.backtest.spread_cost)
         if len(older):
-            return pd.concat([older, mt5_df]).sort_index()
+            merged = pd.concat([older, mt5_df]).sort_index()
+            for col in ("open", "high", "low", "close", "tick_volume", "spread"):
+                if col in merged:
+                    merged[col] = pd.to_numeric(merged[col], errors="coerce")
+            return merged
     except Exception as e:  # noqa: BLE001
         say(f"  Hugging Face history unavailable ({e})")
     return _with_dukascopy(store, mt5_df, start, say) if dukascopy_back else mt5_df

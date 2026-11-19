@@ -262,7 +262,7 @@ def run_backtest(f: pd.DataFrame, sig: pd.DataFrame, cfg, ai_dir: pd.Series | No
 # ------------------------------------------------------------------------------ metrics
 def metrics(eq: pd.Series, tr: pd.DataFrame, exposure: np.ndarray, initial: float) -> dict:
     daily = eq.resample("D").last().dropna()
-    daily = daily[daily.index.dayofweek < 5] if len(daily) > 10 else daily
+    daily = daily[daily.index.day_of_week < 5] if len(daily) > 10 else daily
     r = daily.pct_change().dropna()
     dd = eq / eq.cummax() - 1
     downside = r[r < 0].std()

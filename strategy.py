@@ -72,7 +72,7 @@ def _segment(b):
     x["quote_age_seconds"] = (b.index - b.last_quote) / 1000
     phase = 2 * np.pi * (b.index % DAY) / DAY
     x["utc_sin"], x["utc_cos"] = np.sin(phase), np.cos(phase)
-    x["utc_weekday"] = pd.to_datetime(b.index, unit="ms", utc=True).dayofweek
+    x["utc_weekday"] = pd.to_datetime(b.index, unit="ms", utc=True).day_of_week
     x["atr_usd_oz"] = atr
     return x
 

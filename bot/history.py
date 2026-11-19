@@ -69,15 +69,23 @@ def download(repo: str, cache_dir: Path, start: date, say=print) -> pd.DataFrame
     df.index = pd.DatetimeIndex(pd.to_datetime(df.pop("time"), unit="s", utc=True), name="time")
     df = df[~df.index.duplicated(keep="last")].sort_index()
     df = df[df.index < pd.Timestamp(now).floor("min") - pd.Timedelta(minutes=1)]  # drop the unfinished bar
-    bad = (df["high"] < df["low"]) | (df["close"] <= 0)
+    # Monthly files can contain object/string columns after concatenating uploads.
+    # Normalize before comparisons so mixed public/broker data cannot break indicators.
+    numeric = ("open", "high", "low", "close", "volume")
+    for col in numeric:
+        if col in df:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    valid = df[["open", "high", "low", "close"]].notna().all(axis=1)
+    valid &= (df["high"] >= df["low"]) & (df["close"] > 0)
     say(f"  {repo}: {len(df):,} bars {df.index.min():%Y-%m-%d} → {df.index.max():%Y-%m-%d} "
         f"({fetched} files fetched, rest from cache)")
-    return df[~bad].astype({"open": float, "high": float, "low": float, "close": float})
+    out = df[valid].copy()
+    return out.astype({col: float for col in numeric if col in out})
 
 
 def to_broker_bid(mid: pd.DataFrame, offset: float, spread: float | None) -> pd.DataFrame:
     """Convert OANDA mid candles to the broker's bid candles (offset ≈ −half the broker spread)."""
-    out = mid[["open", "high", "low", "close"]] + offset
-    out["tick_volume"] = mid["volume"].astype(float)
+    out = mid[["open", "high", "low", "close"]].apply(pd.to_numeric, errors="coerce") + offset
+    out["tick_volume"] = pd.to_numeric(mid["volume"], errors="coerce").astype(float)
     out["spread"] = spread if spread is not None else float("nan")
     return out

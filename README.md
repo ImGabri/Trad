@@ -12,6 +12,8 @@ XAUUSD Trader for PU Prime MetaTrader 5. Trad sends market buy and sell requests
 
 **[Download Trad for Windows x64](https://github.com/ImGabri/Trad/releases/download/v1.0.0/Trad-Windows-x64.zip)** · [Releases and checksums](https://github.com/ImGabri/Trad/releases)
 
+**[v1.1.0 release notes](RELEASE_NOTES-1.1.0.md)** — online learning from public real-time data; see the release notes for the v1.1.0 source release and the V2.0.2 Windows bundle.
+
 ## First run on Windows
 
 1. Open the PU Prime MetaTrader 5 desktop terminal on Windows x64. Sign in to your **demo** using your assigned server. Credentials stay in MT5. [PU Prime login instructions](https://helpcenter.puprime.com/hc/en-001/articles/18340367150095-How-do-I-find-or-add-my-trading-server-in-MetaTrader-4-MT4-MetaTrader-5-MT5)
@@ -55,9 +57,16 @@ The learning state persists in `data/demo.sqlite`. A restart or partial close ca
 |---|---|---|
 | PU Prime gold ticks | Bid/ask, spread, quote arrival speed, directional quote changes, recent range, volatility, RSI, momentum, session time and 1–60 minute trends | MT5 demo history and current quotes |
 | Other PU Prime symbols | Silver, EUR/USD, USD/JPY, dollar index, S&P 500, Nasdaq 100, WTI and VIX returns | Uses matching instruments on your demo server. Option 1 lists the symbols it found |
+| Public real-time quotes | XAUUSD proxy (gold futures) and context markets for online learning when the terminal feed is stale | Key-free public finance endpoints; never used for order entry |
 | ALFRED / FRED | Two- and ten-year Treasury yields, ten-year real yield, ten-year breakeven inflation, broad US dollar index and VIX | Optional local environment variable `FRED_API_KEY`. Uses first-release vintages with a conservative availability delay |
 | US Bureau of Labor Statistics | Scheduled CPI, payrolls, producer prices, job openings, employment costs and import/export prices | Automatic public calendar refresh. Each schedule version is timestamped when first observed |
 | Trading Economics | Scheduled, high-importance US releases with a confirmed time, including Fed events when the provider lists them | Optional `TE_API_KEY` with calendar access |
+
+## Online learning from public real-time data
+
+Trad keeps learning between demo sessions. A background poller fetches recent public quotes for gold and its context markets (silver, dollar index, S&P 500, Nasdaq, WTI, EUR/USD, VIX), scores price impulses with the same pipeline as the demo runner, and tracks each online signal until its stop, target or three-minute time exit resolves on subsequent public prices. Every resolved outcome updates the side-specific score adjustments (bounded logistic weights, the same mechanism as post-trade learning) in `data/online_learning.json`, so the buy and sell scores adapt to what the public tape is doing right now.
+
+This is strictly off the order path: demo entries always use MT5 quotes, network problems are logged and skipped, no credentials are ever sent online, and online signals never place orders themselves. They only feed the adjustment weights that nudge the runner's buy/sell scores.
 | Your archived event schedule | Additional or rescheduled news windows | Optional `data/events_manual.csv` with columns `event_id,known_utc,event_utc,name,active`. Use ISO timestamps with offsets and 1 or 0 for active |
 
 The model joins reference-market closes only after their minutes have ended. Missing or stale market inputs are reported in the decision log and use training-sample medians. News windows come from schedules already known at the decision time. A new calendar download cannot reconstruct what traders knew before the first snapshot. A provider outage can leave a gap in news coverage. Provider status is printed during preparation and logged during a running session. Gold quote imbalance measures changes to this broker's quotes.

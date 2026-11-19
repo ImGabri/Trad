@@ -17,6 +17,7 @@ import broker
 import learning
 from feeds import load_context, sync_feeds
 from journal import Journal
+from online_learning import OnlineLearner
 from strategy import DIRECTION, MINUTE, candidate_features, event_mask, features, predict, quote_triggers, spread_ok, stop_distance
 
 
@@ -191,13 +192,16 @@ def run(conn, cfg, artifact, folder, orders_enabled, active=None):
     folder.mkdir(parents=True,exist_ok=True)
     with single_runner(key):
         journal = Journal(folder/"demo.sqlite",key,symbol)
+        online = OnlineLearner(folder, artifact["classifier"], cfg["strategy"])
+        online.start()
         try:
-            loop(conn,cfg,artifact["classifier"],folder,journal,orders_enabled,active)
+            loop(conn,cfg,artifact["classifier"],folder,journal,orders_enabled,active,online)
         finally:
+            online.stop()
             journal.db.close()
 
 
-def loop(conn,cfg,model,folder,journal,orders_enabled,active=None):
+def loop(conn,cfg,model,folder,journal,orders_enabled,active=None,online=None):
     api, identity, symbol, markets = conn
     s, demo = cfg["strategy"], cfg["demo"]
     seen, bucket, minute = None, -1, -1
@@ -209,8 +213,13 @@ def loop(conn,cfg,model,folder,journal,orders_enabled,active=None):
     last_decision = None
     blocked = ""
     states = journal.state()
+    journal_states = states
     mode = "demo orders" if orders_enabled else "watch"
     emit(folder,"started",mode=mode,symbol=symbol,poll_interval_ms=demo["poll_ms"])
+    if online is None:
+        online = OnlineLearner(folder, model, s)
+        online.start()
+    states = learning.combined(states, online.states)
     while True:
         current = time.monotonic()
         if current >= service_at:
@@ -222,12 +231,23 @@ def loop(conn,cfg,model,folder,journal,orders_enabled,active=None):
             for review in reviews:
                 emit(folder,"trade_review",**review)
             if reviews:
-                states = journal.state()
+                journal_states = journal.state()
             held = journal.risk_stop(broker.now_ms(),a.equity,demo["daily_equity_stop_fraction"])
             if orders_enabled:
                 manage_time_exits(api,identity,symbol,positions,orders,journal,s,demo,folder)
             blocked = ("daily equity limit" if held else "existing exposure" if positions or orders
                        else journal.entry_block(broker.now_ms(),s))
+            if online is not None:
+                try:
+                    report = online.tick(asof_ms=broker.now_ms(), events=events)
+                    scan = report.get("scan") or {}
+                    if scan and scan.get("side"):
+                        emit(folder, "online_signal", mode="online", symbol=symbol, **scan)
+                    for result in report.get("resolved") or []:
+                        emit(folder, "online_resolve", mode="online", symbol=symbol, **result)
+                    states = learning.combined(journal_states, online.states)
+                except Exception:
+                    pass
             service_at = current + .5
         if current >= refresh_at and not (refresh and refresh.is_alive()):
             def sync():

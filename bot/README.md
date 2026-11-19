@@ -3,6 +3,9 @@
 A self-learning gold scalper with a one-click dashboard. It trades XAUUSD on your PU Prime MT5 demo, runs in
 the background, restarts at every Windows logon and retrains itself every weekend on everything it has collected.
 
+**v2.0.2 hotfix:** public OANDA and broker OHLCV columns are normalized before feature generation, fixing the
+`unorderable types for comparison` crash during history preparation. See [the release notes](RELEASE_NOTES-2.0.2.md).
+
 ## Start (3 steps)
 
 1. Install **PU Prime MT5**, log in to your **demo** account with **Save password** ticked, and click

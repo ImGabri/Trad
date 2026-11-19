@@ -57,7 +57,7 @@ def m1_trigger(f: pd.DataFrame, cfg) -> pd.Series:
 
 def session_state(idx: pd.DatetimeIndex, cfg) -> pd.DataFrame:
     s = cfg.sessions
-    dow = idx.dayofweek
+    dow = idx.day_of_week
     mins = np.asarray(idx.hour * 60 + idx.minute)
 
     def within(a, b):
@@ -83,7 +83,7 @@ def session_state(idx: pd.DatetimeIndex, cfg) -> pd.DataFrame:
 def market_closed(idx: pd.DatetimeIndex, cfg) -> np.ndarray:
     o, c = cfg.sessions.week_open, cfg.sessions.week_close
     ot, ct = _t(o.time), _t(c.time)
-    dow, mins = idx.dayofweek, idx.hour * 60 + idx.minute
+    dow, mins = idx.day_of_week, idx.hour * 60 + idx.minute
     after_close = ((dow == c.day) & (mins >= ct.hour * 60 + ct.minute)) | (dow == 5)
     before_open = (dow == o.day) & (mins < ot.hour * 60 + ot.minute)
     return np.asarray(after_close | before_open)

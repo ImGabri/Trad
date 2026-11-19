@@ -62,7 +62,9 @@ def stoch(df: pd.DataFrame, n=14, d=3):
 
 
 def obv(df: pd.DataFrame) -> pd.Series:
-    return (np.sign(df["close"].diff()).fillna(0) * df["tick_volume"]).cumsum()
+    close = pd.to_numeric(df["close"], errors="coerce")
+    volume = pd.to_numeric(df["tick_volume"], errors="coerce")
+    return (np.sign(close.diff()).fillna(0) * volume).cumsum()
 
 
 def slope(s: pd.Series, n: int) -> pd.Series:
@@ -107,7 +109,7 @@ def align_closed(m1_index: pd.DatetimeIndex, htf: pd.DataFrame, minutes: int, pr
 def session_flags(idx: pd.DatetimeIndex) -> pd.DataFrame:
     h = idx.hour + idx.minute / 60
     return pd.DataFrame({
-        "hour": idx.hour, "dow": idx.dayofweek,
+        "hour": idx.hour, "dow": idx.day_of_week,
         "sess_asia": ((h >= 0) & (h < 7)).astype(int),
         "sess_london": ((h >= 7) & (h < 16)).astype(int),
         "sess_ny": ((h >= 13) & (h < 21)).astype(int),
@@ -134,6 +136,11 @@ def build_features(m1: pd.DataFrame, cfg=None, correlated: dict[str, pd.Series] 
     """Return the M1 feature/state frame used by both strategy rules and the ML model."""
     n_atr = cfg.strategy.atr_period if cfg else 14
     m1 = m1.copy()
+    # Public history and broker bars can merge into object-dtype columns.
+    # Coerce once at the boundary so every indicator sees numeric values.
+    for col in ("open", "high", "low", "close", "tick_volume", "spread"):
+        if col in m1:
+            m1[col] = pd.to_numeric(m1[col], errors="coerce")
     if m1["spread"].isna().all():
         m1["spread"] = cfg.backtest.spread_cost if cfg else 0.10
     m1["spread"] = m1["spread"].ffill().bfill()

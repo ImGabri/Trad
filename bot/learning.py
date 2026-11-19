@@ -41,7 +41,7 @@ class CostModel:
             sp = pd.read_sql_query("SELECT time_ms, spread FROM spread_log WHERE spread > 0", store.conn)
             if len(sp) > 50_000:
                 t = pd.to_datetime(sp.time_ms, unit="ms", utc=True)
-                how = t.dt.dayofweek * 24 + t.dt.hour
+                how = t.dt.day_of_week * 24 + t.dt.hour
                 med = sp.spread.groupby(how).median()
                 prof = [float(med.get(h, np.nan)) for h in range(168)]
                 base = float(np.nanmedian(prof))
@@ -61,7 +61,7 @@ class CostModel:
     def spread_for(self, idx: pd.DatetimeIndex, default: float) -> np.ndarray:
         if not self.spread_how:
             return np.full(len(idx), default)
-        return np.asarray(self.spread_how)[np.asarray(idx.dayofweek * 24 + idx.hour)]
+        return np.asarray(self.spread_how)[np.asarray(idx.day_of_week * 24 + idx.hour)]
 
     def save(self, path: Path):
         path.write_text(json.dumps(dict(spread_how=self.spread_how, slippage_usd=self.slippage_usd,

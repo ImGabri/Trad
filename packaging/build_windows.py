@@ -13,8 +13,8 @@ from urllib.request import urlopen
 from zipfile import ZIP_DEFLATED, ZipFile
 
 ROOT = Path(__file__).resolve().parents[1]
-FILES = ("README.md","START.cmd","VERSION","settings.json","requirements.txt","goldbot.py","background.py",
-         "broker.py","engine.py","feeds.py","journal.py","learning.py","research.py","strategy.py")
+FILES = ("README.md","RELEASE_NOTES-1.1.0.md","START.cmd","VERSION","settings.json","requirements.txt","goldbot.py","background.py",
+         "broker.py","engine.py","feeds.py","journal.py","learning.py","online_learning.py","research.py","strategy.py")
 ASSET = "Trad-Windows-x64.zip"
 
 

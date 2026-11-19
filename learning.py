@@ -9,6 +9,16 @@ def blank():
     return {side: {"weights": [0.] * len(INPUTS), "closed": 0} for side in ("BUY", "SELL")}
 
 
+def combined(demo, online):
+    """Combine independently learned demo-trade and public-data adjustments."""
+    result = blank()
+    for side in ("BUY", "SELL"):
+        result[side]["weights"] = (np.asarray(demo[side]["weights"], dtype=float)
+                                   + np.asarray(online[side]["weights"], dtype=float)).tolist()
+        result[side]["closed"] = int(demo[side]["closed"]) + int(online[side]["closed"])
+    return result
+
+
 def clip_logit(p):
     p = np.clip(p, .001, .999)
     return np.log(p/(1-p))
