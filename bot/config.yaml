@@ -12,7 +12,7 @@ symbols:
 
 # Other markets fed to the AI as 1- and 5-minute % changes. `mt5`: PU Prime symbol candidates (the account
 # suffix such as ".s" is added automatically); `hf`: public 1-minute history for training on older years.
-# A market is only used when it is available both live and in training (no US 10Y symbol on PU Prime → not used).
+# A market is only used when it is available both live and in training; markets PU Prime does not offer are skipped.
 context:
   dxy:    {mt5: [USDX, DXY, USDIndex, USIndex, DOLLAR_INDX], hf: ""}
   spx:    {mt5: [SP500, US500, SPX500, SP500ft], hf: bunqi/OANDA_SPX500USD_US-SPX-500}
@@ -23,6 +23,37 @@ context:
   wti:    {mt5: [USOUSD, USOIL, XTIUSD, CL-OIL], hf: bunqi/OANDA_WTICOUSD_West-Texas-Oil}
   audusd: {mt5: [AUDUSD], hf: bunqi/OANDA_AUDUSD_AUDUSD}
   usdcnh: {mt5: [USDCNH], hf: bunqi/OANDA_USDCNH_USDCNH}
+  # v2.7 — more markets that move with (or against) gold. Used once the AI retrains (weekend or "Retrain AI now").
+  gbpusd:  {mt5: [GBPUSD], hf: bunqi/OANDA_GBPUSD_GBPUSD}
+  usdchf:  {mt5: [USDCHF], hf: bunqi/OANDA_USDCHF_USDCHF}            # franc = the other safe haven
+  usdcad:  {mt5: [USDCAD], hf: bunqi/OANDA_USDCAD_USDCAD}
+  nzdusd:  {mt5: [NZDUSD], hf: bunqi/OANDA_NZDUSD_NZDUSD}
+  eurjpy:  {mt5: [EURJPY], hf: bunqi/OANDA_EURJPY_EURJPY}
+  audjpy:  {mt5: [AUDJPY], hf: bunqi/OANDA_AUDJPY_AUDJPY}            # risk-on / risk-off gauge
+  gbpjpy:  {mt5: [GBPJPY], hf: bunqi/OANDA_GBPJPY_GBPJPY}
+  eurchf:  {mt5: [EURCHF], hf: bunqi/OANDA_EURCHF_EURCHF}
+  xaueur:  {mt5: [XAUEUR], hf: bunqi/OANDA_XAUEUR_GoldEUR}           # gold in other currencies
+  xaujpy:  {mt5: [XAUJPY], hf: bunqi/OANDA_XAUJPY_GoldJPY}
+  xauaud:  {mt5: [XAUAUD], hf: bunqi/OANDA_XAUAUD_GoldAUD}
+  platinum:  {mt5: [XPTUSD, PLATINUM], hf: bunqi/OANDA_XPTUSD_Platinum}
+  palladium: {mt5: [XPDUSD, PALLADIUM], hf: bunqi/OANDA_XPDUSD_Palladium}
+  copper:  {mt5: [COPPER, XCUUSD, HG-C], hf: bunqi/OANDA_XCUUSD_Copper}
+  brent:   {mt5: [UKOUSD, UKOIL, XBRUSD, BRENT], hf: bunqi/OANDA_BCOUSD_Brent-Crude-Oil}
+  natgas:  {mt5: [NG-C, NGAS, XNGUSD, NATGAS], hf: bunqi/OANDA_NATGASUSD_Natural-Gas}
+  us30:    {mt5: [US30, DJ30, DJI30, WS30], hf: bunqi/OANDA_US30USD_US-Wall-St-30}
+  us2000:  {mt5: [US2000, RUSS2000, US2K], hf: bunqi/OANDA_US2000USD_US-Russ-2000}
+  dax:     {mt5: [GER40, DE40, GER30, DAX40], hf: bunqi/OANDA_DE30EUR_Germany-30}
+  eu50:    {mt5: [EU50, EUSTX50, STOXX50], hf: bunqi/OANDA_EU50EUR_Europe-50}
+  uk100:   {mt5: [UK100, FTSE100], hf: bunqi/OANDA_UK100GBP_UK-100}
+  jp225:   {mt5: [JP225, JPN225, NIKKEI], hf: bunqi/OANDA_JP225USD_Japan-225}
+  hk50:    {mt5: [HK50, HSI, HK33], hf: bunqi/OANDA_HK33HKD_Hong-Kong-33}
+  china50: {mt5: [CHINA50, CN50, CHINAA50], hf: bunqi/OANDA_CN50USD_China-A50}
+  btc:     {mt5: [BTCUSD], hf: bunqi/OANDA_BTCUSD_Bitcoin}
+  eth:     {mt5: [ETHUSD], hf: bunqi/OANDA_ETHUSD_Ether}
+  us10y:   {mt5: [UST10Y, US10Y, TNOTE], hf: bunqi/OANDA_USB10YUSD_US-10Y-T-Note}   # real yields drive gold
+  us02y:   {mt5: [UST02Y, US02Y], hf: bunqi/OANDA_USB02YUSD_US-2Y-T-Note}
+  bund:    {mt5: [BUND, DE10Y, EUBUND], hf: bunqi/OANDA_DE10YBEUR_Bund}
+  vix:     {mt5: [VIX, VIXX, VOLX], hf: ""}                             # live only (no training history)
 
 instrument:                  # XAUUSD contract spec; live values are re-read from symbol_info
   contract_size: 100         # oz per lot -> $1 move = $100/lot

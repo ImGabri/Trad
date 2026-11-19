@@ -28,6 +28,30 @@ tab: the bot keeps running, stops Windows from going to sleep while it trades, a
 | News | Verified 2019–2026 US calendar (NFP, CPI, PPI, FOMC, retail sales, GDP, PCE, JOLTS, ISM) plus a live ForexFactory feed. No entries 15→5 min before an event (stops tightened). One AI "news scalp" in the ±5 min window. Wider stops for 15 min after. |
 | Risk | 0.5 % per trade. Small-account mode trades 0.01 lot when that risks ≤ 10 % (a €50 start). 15 % daily loss halt, max 2 open / 20 trades a day, spread and slippage filters, survival hard stop, no averaging down, demo accounts only. |
 
+## v2.7 — 🎯 Perfect, ☠️ Extreme and 30 more markets
+
+- **🎯 Perfect** (the default style) is the best strategy found in all backtests, Turbo with its tested settings.
+  Press **▶ Start** and it does everything else. Choosing any style button clears old manual tweaks so the preset
+  is applied exactly as tested.
+  - Backtest (€100 start, 1 % risk, real Standard costs): **+125 %** in 2019–23, **+617 %** in 2024–mid-25 and
+    **+529 %** from Aug 2025 to Nov 2026. The worst drawdown was −84 %.
+- **☠️ Extreme** is a basket that trades very fast:
+  - It follows the last 2 one-minute candles and adds up to 4 legs every 0.3 × ATR.
+  - The basket target is 0.5 × ATR, with a 3 × ATR stop and a 60-minute limit.
+  - It trades around the clock with no daily limit, about 40 baskets a day.
+  - **Backtest:** it wins 78–86 % of baskets but loses about $0.70–$1.10 per basket on average. A €100 account
+    was **blown in every tested period**. It is a demo experiment, and the dashboard asks you to confirm.
+- **🧺 Basket** now has unlimited trades a day, and it buys and sells.
+- **More data for the AI:**
+  - **Currencies:** GBP, CHF, CAD, NZD, EUR/JPY, AUD/JPY, GBP/JPY and EUR/CHF.
+  - **Gold priced in other currencies:** EUR, JPY and AUD.
+  - **Metals and energy:** platinum, palladium, copper, Brent crude and natural gas.
+  - **Stock indices:** Dow, Russell 2000, DAX, Euro Stoxx 50, FTSE, Nikkei, Hang Seng and China A50.
+  - **Crypto:** Bitcoin and Ether.
+  - **Bonds and volatility:** US 10-year and 2-year notes, the Bund and the VIX.
+  - **Which markets count:** each market is only used if your PU Prime server offers it. The AI starts using
+    them at its next retrain (every weekend, or **Retrain AI now**).
+
 ## v2.6 — Turbo is now the default (best of 768 variants)
 
 **Turbo:**

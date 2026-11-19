@@ -155,7 +155,16 @@ STYLES = {  # one click instead of editing numbers
                 "sessions": {"asia_min_confidence": 0.75}},
     "turbo": {"strategy": {"mode": "turbo"}},  # exits/risk come from the config.yaml `turbo:` section
 }
-STYLES["basket"] = {"strategy": {"mode": "basket"}, "risk": {"max_daily_trades": 100000}}  # no daily cap
+STYLES["perfect"] = STYLES["turbo"]  # 🎯 Perfect = best backtested strategy (improved Turbo, config `turbo:` section)
+BASKET_DEFAULT = {"candles_tf": "m5", "candles": 5, "follow": True, "step_atr": 0.75, "max_entries": 2, "tp_atr": 1.0,
+                  "sl_atr": 6.0, "hold_minutes": 240, "equity_per_001": 50}
+STYLES["basket"] = {"strategy": {"mode": "basket"}, "basket": dict(BASKET_DEFAULT), "risk": {"max_daily_trades": 100000}}
+# ☠️ Extreme: basket at maximum speed — 2 one-minute candles decide, 4 legs, quick target, 24 h, no daily cap.
+# Backtest (€100): ~40 baskets/day, 78–86 % won, but blown in 2020–23, 2024–25 and Aug 2025–Nov 2026.
+STYLES["extreme"] = {"strategy": {"mode": "basket"}, "risk": {"max_daily_trades": 100000},
+                     "sessions": {"asia_enabled": True},
+                     "basket": dict(BASKET_DEFAULT, candles_tf="m1", candles=2, step_atr=0.3, max_entries=4, tp_atr=0.5,
+                                    sl_atr=3.0, hold_minutes=60)}
 for _k in ("active", "careful"):  # leaving Turbo/Basket restores the scalping engine
     STYLES[_k].setdefault("strategy", {}).update(mode="scalp", ai_gate=True)
 
@@ -186,8 +195,11 @@ def _trades(limit: int = 15) -> tuple[list, list]:
 def _style() -> str:
     from config import load_config
     st = load_config(APP / "config.yaml").strategy
-    if str(getattr(st, "mode", "scalp")) in ("turbo", "basket"):
-        return str(st.mode)
+    if str(getattr(st, "mode", "scalp")) == "turbo":
+        return "turbo"
+    if str(getattr(st, "mode", "scalp")) == "basket":
+        b = load_config(APP / "config.yaml").basket
+        return "extreme" if str(b.candles_tf) == "m1" and int(b.candles) <= 2 else "basket"
     thr = st.confidence_threshold
     return "active" if thr <= 0.55 else "careful"
 
@@ -268,10 +280,12 @@ def _restart_if_running() -> str:
     return ""
 
 
-def _write_user(updates: dict):
+def _write_user(updates: dict, replace: bool = False):
+    import copy
     from config import _deep_update
     p = DATA / "user.yaml"
-    cur = (yaml.safe_load(p.read_text()) if p.exists() else {}) or {}
+    cur = {} if replace else ((yaml.safe_load(p.read_text()) if p.exists() else {}) or {})
+    updates = copy.deepcopy(updates)
     _deep_update(cur, updates)
     DATA.mkdir(exist_ok=True)
     p.write_text(yaml.safe_dump(cur, sort_keys=False))
@@ -336,10 +350,12 @@ def action(name: str, body: dict) -> str:
         style = body.get("style")
         if style not in STYLES:
             return "Unknown style."
-        _write_user(STYLES[style])
+        _write_user(STYLES[style], replace=True)  # a style is a complete, tested setup — no leftover tweaks
         msg = {"active": "Active: trades every setup the AI agrees with.",
                "careful": "Careful: only high-confidence setups.",
-               "turbo": "🚀 Turbo: hourly trend breakouts — best mode in 7.9 years of testing (use €100+).",
+               "turbo": "🎯 Perfect: the best backtested strategy (hourly trend breakouts, 1 % risk). Use €100+.",
+               "perfect": "🎯 Perfect: the best backtested strategy (hourly trend breakouts, 1 % risk). Use €100+.",
+               "extreme": "☠️ Extreme: ~40 baskets a day on 1-minute candles. Lost money in every backtest period.",
                "basket": "🧺 Basket: follows the last candles and adds legs; whole basket closes together (lost money in backtests)."}
         return msg[style] + _restart_if_running()
     if name == "test_trade":
