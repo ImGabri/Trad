@@ -56,10 +56,10 @@ def download(cfg, data_dir: Path, years: float, say=print, dukascopy_back: bool 
         plain = sym.split(".")[0]
         if key != "gold" and plain != sym:
             extra = store.load_bars(plain, "M1", start)
-            df = pd.concat([extra[~extra.index.isin(df.index)], df]).sort_index()
+            df = (pd.concat([extra[~extra.index.isin(df.index)], df]).sort_index() if len(extra) else df)
         if key == "gold" and sym != cfg.symbols.primary:  # bars imported from CSV under the plain name
             extra = store.load_bars(cfg.symbols.primary, "M1", start)
-            df = pd.concat([extra[~extra.index.isin(df.index)], df]).sort_index()
+            df = (pd.concat([extra[~extra.index.isin(df.index)], df]).sort_index() if len(extra) else df)
         say(f"  {sym}: {len(df):,} broker bars" + (f" {df.index.min():%Y-%m-%d} → {df.index.max():%Y-%m-%d}" if len(df) else ""))
         out[key] = df
     equity = account_equity_usd(gold)
@@ -100,7 +100,8 @@ def _older_history(cfg, data_dir: Path, store, mt5_df: pd.DataFrame, start: date
         older["spread"] = CostModel.load(data_dir / "learning" / "costs.json").spread_for(older.index,
                                                                                             cfg.backtest.spread_cost)
         if len(older):
-            return pd.concat([older, mt5_df]).sort_index()
+            out = pd.concat([older, mt5_df]).sort_index() if len(mt5_df) else older
+            return out.astype("float64")
     except Exception as e:  # noqa: BLE001
         say(f"  Hugging Face history unavailable ({e})")
     return _with_dukascopy(store, mt5_df, start, say) if dukascopy_back else mt5_df

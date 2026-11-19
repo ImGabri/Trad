@@ -21,6 +21,8 @@ context:
   eurusd: {mt5: [EURUSD], hf: bunqi/OANDA_EURUSD_EURUSD}
   usdjpy: {mt5: [USDJPY], hf: bunqi/OANDA_USDJPY_USDJPY}
   wti:    {mt5: [USOUSD, USOIL, XTIUSD, CL-OIL], hf: bunqi/OANDA_WTICOUSD_West-Texas-Oil}
+  audusd: {mt5: [AUDUSD], hf: bunqi/OANDA_AUDUSD_AUDUSD}
+  usdcnh: {mt5: [USDCNH], hf: bunqi/OANDA_USDCNH_USDCNH}
 
 instrument:                  # XAUUSD contract spec; live values are re-read from symbol_info
   contract_size: 100         # oz per lot -> $1 move = $100/lot

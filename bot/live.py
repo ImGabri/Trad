@@ -343,7 +343,7 @@ class Runner:
         corr = {}
         for k, sym in self.corr.items():
             if sym and any(c.startswith(k + "_chg") for c in self.model.features):
-                bars = self.conn.rates_latest(sym, "M1", 300)
+                bars = self.conn.rates_latest(sym, "M1", 1600)  # ≥ 1 day: rolling silver beta needs it
                 corr[k] = bars["close"] if not bars.empty else None
         now = pd.Timestamp.now(tz="UTC")
         ticks = self.conn.ticks_range(self.gold, (now - pd.Timedelta(minutes=5)).to_pydatetime(), now.to_pydatetime())

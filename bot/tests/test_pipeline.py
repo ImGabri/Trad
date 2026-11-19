@@ -118,3 +118,18 @@ def test_tick_microstructure():
     t = pd.DataFrame({"bid": bid, "ask": bid + 0.1}, index=idx)
     mic = tick_microstructure(t)
     assert mic["trade_dir_ratio"].iloc[-1] == 1.0 and mic["ofi"].iloc[0] > 0
+
+
+def test_empty_sqlite_table_does_not_poison_dtypes(tmp_path, cfg):
+    """Regression (v2.0.4 crash): empty SQLite query → object columns → concat → 'unorderable types' in obv()."""
+    st = Store(tmp_path / "x.db")
+    m = synthetic_m1(days=4)
+    st.save_bars("XAUUSD.s", "M1", m)
+    df = st.load_bars("XAUUSD.s", "M1")
+    extra = st.load_bars("XAUUSD", "M1")  # nothing imported under the plain name
+    assert len(extra) == 0 and all(t == np.float64 for t in extra.dtypes)
+    merged = pd.concat([extra[~extra.index.isin(df.index)], df]).sort_index()
+    assert all(t == np.float64 for t in merged.dtypes)
+    f = build_features(merged, cfg)
+    sig = compute_signals(f, cfg)
+    assert np.isfinite(f["obv_slope"].iloc[-1]) and set(sig["rule_signal"].unique()) <= {-1, 0, 1}

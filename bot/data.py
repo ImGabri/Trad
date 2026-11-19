@@ -332,9 +332,11 @@ class Store:
         if end:
             q += " AND time<?"; p.append(int(end.timestamp()))
         df = pd.read_sql_query(q + " ORDER BY time", self.conn, params=p)
-        df.index = pd.to_datetime(df.pop("time"), unit="s", utc=True)
+        df.index = pd.to_datetime(df.pop("time").astype("int64"), unit="s", utc=True)
         df.index.name = "time"
-        return df
+        # Always numeric: an EMPTY query returns object columns, and with pandas 3 concatenating that with real
+        # bars turns every price column into object ("unorderable types" crash in features).
+        return df.apply(pd.to_numeric, errors="coerce").astype("float64")
 
     def last_bar_time(self, symbol: str, tf: str) -> datetime | None:
         r = self.conn.execute("SELECT MAX(time) FROM bars WHERE symbol=? AND tf=?", (symbol, tf)).fetchone()
