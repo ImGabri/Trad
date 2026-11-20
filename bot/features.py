@@ -114,6 +114,23 @@ def resample(m1: pd.DataFrame, minutes: int) -> pd.DataFrame:
     return out.dropna(subset=["close"])
 
 
+def _resample_ohlc(m1: pd.DataFrame, minutes: int) -> pd.DataFrame:
+    """open/high/low/close of resample(m1, minutes) — the same values and index, computed with numpy (≈4× faster)
+    for a time-sorted, NaN-free float64 frame on a UTC index; anything else goes through resample() itself."""
+    idx = m1.index
+    cols = [m1[k].to_numpy() for k in ("open", "high", "low", "close")]
+    if (not len(idx) or 1440 % minutes or not isinstance(idx, pd.DatetimeIndex) or str(idx.tz) != "UTC"
+            or not idx.is_monotonic_increasing or any(a.dtype != np.float64 or np.isnan(a).any() for a in cols)):
+        return resample(m1, minutes)[["open", "high", "low", "close"]]
+    lab = idx.floor(f"{minutes}min")  # bins start at midnight UTC (resample's origin) since minutes divides a day
+    i8 = lab.asi8
+    starts = np.flatnonzero(np.r_[True, i8[1:] != i8[:-1]])
+    ends = np.r_[starts[1:], len(i8)] - 1
+    o, h, l, c = cols
+    return pd.DataFrame({"open": o[starts], "high": np.maximum.reduceat(h, starts),
+                         "low": np.minimum.reduceat(l, starts), "close": c[ends]}, index=lab[starts])
+
+
 def align_closed(m1_index: pd.DatetimeIndex, htf: pd.DataFrame, minutes: int, prefix: str) -> pd.DataFrame:
     """Join HTF columns onto M1 rows, using only HTF bars closed by the M1 bar's close."""
     h = htf.copy()
@@ -180,7 +197,7 @@ def build_features(m1: pd.DataFrame, cfg=None, correlated: dict[str, pd.Series] 
     f["vol_ratio"] = m1["tick_volume"] / m1["tick_volume"].rolling(20).mean()
 
     # --- higher timeframes (closed bars only)
-    m5, m15, h1 = resample(m1, 5), resample(m1, 15), resample(m1, 60)
+    m5, m15, h1 = _resample_ohlc(m1, 5), _resample_ohlc(m1, 15), _resample_ohlc(m1, 60)  # only OHLC is used below
     m5x = pd.DataFrame({"atr": atr(m5, n_atr), "close": m5["close"],
                         "swing_hi": m5["high"].rolling(cfg.strategy.fib_swing_bars_m5 if cfg else 48).max(),
                         "swing_lo": m5["low"].rolling(cfg.strategy.fib_swing_bars_m5 if cfg else 48).min()})

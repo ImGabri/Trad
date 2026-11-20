@@ -3,6 +3,80 @@
 A self-learning gold scalper with a one-click dashboard. It trades XAUUSD on your PU Prime MT5 demo, runs in
 the background, restarts at every Windows logon and retrains itself every weekend on everything it has collected.
 
+## v2.18 — 🔮 Predict Max 5
+
+**What it is:** Hyper Max 5's trades, with the AI's prediction of the next 25 minutes setting the size. It risks
+**1.5 ×** when the AI agrees with the breakout and **0.5 ×** when it does not.
+
+**How it was tested:** 7 ways of combining the prediction with Hyper Max 5, using the AI's **out-of-sample**
+walk-forward predictions (the model never saw those prices). The test runs from 2019 to Jul 2026, at 1 % base risk.
+
+| Version | €200: 2019–23 / 2024–25 / Aug 25–Jul 26 | €1,000: same periods | Trades/day |
+|---|---|---|---|
+| 🎯🔥⚡ Hyper Max 5 | +265 / +1,304 / +911 % | +356 / +956 / +272 % | 1.86 |
+| 🔮 **Predict Max 5** (AI sizing) | **+300 / +1,958** / +797 % | +328 / +719 / **+469 %** | 1.84 |
+| AI as a filter (skip if P < 0.50) | +160 / +281 / +987 % | +94 / +154 / +265 % | 1.08 |
+| AI as a strict filter (P ≥ 0.52) | +116 / +94 / +311 % (dd only −16 … −47 %) | +46 / +52 / +68 % | 0.48 |
+
+- **The model is weak:** about 51.5 % right. As a **filter** it skipped many of the big winners, so it was worse.
+- **For sizing:** better in 3 of the 6 cells and slightly higher growth overall at both sizes. That is a small
+  edge, not a reliable one.
+- **Drawdowns:** still large, up to −78 %.
+
+## v2.17 — re-optimised Hyper Max 5, and a faster bot
+
+**Hyper Max 5 exits re-optimised.** 28 exit and risk variants were tested: stop 2–4 × ATR, target 20/40 × ATR,
+trailing on/off, 15 h vs 24 h hold, and 0.75 / 1 / 1.5 % risk. The winner was chosen on 2019–25 only and then
+checked on the unseen Aug 2025 – Nov 2026 period.
+
+The change: **hold trades up to 24 h instead of 15 h.**
+
+| Hyper Max 5, 1 % risk | 2019 – 23 | 2024 – mid-25 | Aug 2025 – Nov 2026 (unseen) |
+|---|---|---|---|
+| €200, 15 h hold | +197 % | +1,303 % | +1,317 % |
+| €200, **24 h hold** | **+265 %** | +1,304 % | +1,046 % |
+| €1,000, 15 h hold | +142 % | +788 % | +325 % |
+| €1,000, **24 h hold** | **+356 %** | **+907 %** | **+349 %** |
+
+- **Verified end to end** through the app's own presets, signals and engine. The worst drawdown is still large,
+  up to −88 %.
+- **Rejected:**
+  - trailing stops and 2 × ATR stops: worse in every period
+  - 1.5 % risk: highest profit, but −96 % drawdowns
+- **Fixed:** a style's own hold time was being overwritten by the default Perfect exits.
+
+**Faster live bot.** It does the same work and makes identical decisions, checked on 2,250 simulated bars.
+- **Data downloads:** the bot no longer re-downloads 13,000 one-minute bars, the related markets and 800 hourly
+  bars every minute. It keeps them and only fetches the newest bars, with a full refresh on any gap, revised bar or
+  reconnect, and every 60 minutes.
+- **Processing speed:** each closed minute is about 25 % faster (≈ 190 ms instead of ≈ 260 ms on real gold data),
+  and the slowest minutes are about 3 × faster.
+- **Symbol list:** the MT5 symbol list is read once per connection.
+- **Database:** position data is only written when it changes, instead of twice a second.
+
+## v2.16 — 🎯🔥⚡ Hyper Max 5 (faster Hyper Max)
+
+**What was tested:** 21 faster versions of Hyper Max, each at up to 3, 5 or 8 open trades, at €200 and €1,000,
+with the news calendar on.
+- extra 6 h, 3 h + 6 h and 1/2/3/6 h breakout channels
+- 15-minute-chart channels (4 h / 8 h / 24 h)
+- Hyper's every-minute "buy the dip in the trend" entries
+
+**What failed:** every faster *entry* rule blew €200 in 2019–23. It added many more trades, about 2.2–4 a day,
+but they were small, noisy breakouts.
+
+**What worked:** letting Hyper Max hold **up to 5 trades** instead of 3.
+
+| 1 % risk (max drawdown) | 2019 – 23 | 2024 – mid-25 | Aug 2025 – Nov 2026 | Trades/day |
+|---|---|---|---|---|
+| €200 🎯🔥⚡ Hyper Max 5 | +197 % (−70) | **+1,303 %** (−35) | **+1,317 %** (−54) | 1.9 |
+| €200 🎯🔥 Hyper Max | +202 % (−60) | +1,114 % (−33) | +745 % (−50) | 1.6 |
+| €1,000 🎯🔥⚡ Hyper Max 5 | +142 % (−85) | **+788 %** (−35) | **+325 %** (−41) | |
+| €1,000 🎯🔥 Hyper Max | +176 % (−72) | +591 % (−29) | +140 % (−32) | |
+
+**The trade-off:** much more profit in 2024–26, slightly less in the choppy 2019–23 period, and deeper drops
+(up to −85 % at €1,000).
+
 ## v2.15.1 — startup diagnostics + backtest of the shipped code
 
 - **Startup screen:** the dashboard now shows each startup step with a timer.
