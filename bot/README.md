@@ -3,6 +3,29 @@
 A self-learning gold scalper with a one-click dashboard. It trades XAUUSD on your PU Prime MT5 demo, runs in
 the background, restarts at every Windows logon and retrains itself every weekend on everything it has collected.
 
+## v2.16 — 🎯🔥⚡ Hyper Max 5 (faster Hyper Max)
+
+**What was tested:** 21 faster versions of Hyper Max, each at up to 3, 5 or 8 open trades, at €200 and €1,000,
+with the news calendar on.
+- extra 6 h, 3 h + 6 h and 1/2/3/6 h breakout channels
+- 15-minute-chart channels (4 h / 8 h / 24 h)
+- Hyper's every-minute "buy the dip in the trend" entries
+
+**What failed:** every faster *entry* rule blew €200 in 2019–23. It added many more trades, about 2.2–4 a day,
+but they were small, noisy breakouts.
+
+**What worked:** letting Hyper Max hold **up to 5 trades** instead of 3.
+
+| 1 % risk (max drawdown) | 2019 – 23 | 2024 – mid-25 | Aug 2025 – Nov 2026 | Trades/day |
+|---|---|---|---|---|
+| €200 🎯🔥⚡ Hyper Max 5 | +197 % (−70) | **+1,303 %** (−35) | **+1,317 %** (−54) | 1.9 |
+| €200 🎯🔥 Hyper Max | +202 % (−60) | +1,114 % (−33) | +745 % (−50) | 1.6 |
+| €1,000 🎯🔥⚡ Hyper Max 5 | +142 % (−85) | **+788 %** (−35) | **+325 %** (−41) | |
+| €1,000 🎯🔥 Hyper Max | +176 % (−72) | +591 % (−29) | +140 % (−32) | |
+
+**The trade-off:** much more profit in 2024–26, slightly less in the choppy 2019–23 period, and deeper drops
+(up to −85 % at €1,000).
+
 ## v2.15.1 — startup diagnostics + backtest of the shipped code
 
 - **Startup screen:** the dashboard now shows each startup step with a timer.
