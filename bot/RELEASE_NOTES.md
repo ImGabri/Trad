@@ -1,7 +1,16 @@
-## TradV2 XAUUSD AI Trader 3.0.0 — perfecting pass
+## TradV2 XAUUSD AI Trader 3.0.1 — smoother updates and retrains
 
-**Download:** `TradV2-XAUUSD-Scalper-Windows-x64.zip` below → right-click → *Extract All…* → double-click **START.cmd**.
-Python and every library are bundled. Demo accounts only.
+**Download:** `TradV2-XAUUSD-Scalper-Windows-x64.zip` below → extract → double-click **START.cmd**. Demo accounts only.
+
+### Fixed in 3.0.1
+- **No more false "The background bot is not answering".** After a retrain or a restart, the first minute downloads the market history (MT5 may first sync it from the broker) and grades the channel signals. The bot now keeps its heartbeat during that minute and during retrains, and the dashboard shows *Loading market history…* or *Training*.
+- **Retrains never change a preset strategy.** The rule tuner only adjusts the scalping rules (Active / Careful). Perfect, Hyper Max, Signal AI and the others always run with their own tested settings. Weekly retrains are faster because the rule search is skipped for them. A `tuned.yaml` saved by an earlier retrain under a breakout strategy is ignored.
+- **Updating is seamless.** Starting the new version closes the old dashboard (from 3.0.1 on) or opens next to it, and restarts the background bot if it still runs older code. An open dashboard tab reloads itself when the dashboard restarts, so its buttons never go stale ("forbidden").
+- **Clearer retrain report.** It now says that the "strategy" row is the style's own entries. The Telegram channel-signal trades are graded live (dashboard → Signals) and are not part of that report. A noisy chart log line is gone.
+
+---
+
+## 3.0.0 — perfecting pass
 
 ### What's new
 - **Simpler dashboard.** One card holds START/STOP, demo/watch, equity, today's result and the current strategy with its backtest. **Change strategy** opens every strategy ranked in one table (best profit, most trades a day or safest). Setup collapses to one line once it's done. Trades, Signals and Market are now tabs. Refreshing the page is ~40× faster.

@@ -31,7 +31,7 @@ def test_basket_signal_follows_last_candles():
     assert s1.iloc[5] == -1 and s1.iloc[40] == 1             # fade mode flips the direction
 
 
-def test_live_basket_legs_share_stop_and_target(tmp_path):
+def test_live_basket_legs_share_stop_and_target(tmp_path, monkeypatch):
     m1 = synthetic_m1(days=40, seed=5)
     mod = fake_mt5.install(m1, start_bar=20000)
     for name in ("data", "execution", "live"):
@@ -53,7 +53,7 @@ def test_live_basket_legs_share_stop_and_target(tmp_path):
         return n["i"] < 700
     r = live.Runner(cfg, tmp_path, "demo", keep)
     r.events = pd.DatetimeIndex([], tz="UTC"); r.last_cal = 1e18
-    live.time.sleep = lambda s: None
+    monkeypatch.setattr(live.time, "sleep", lambda s: None)  # restored after the test
     r.run()
     fake = mod._fake
     opens = [o for o in fake.orders if o["action"] == 1 and "position" not in o]
@@ -69,7 +69,7 @@ def test_live_basket_legs_share_stop_and_target(tmp_path):
     assert (trades.reason_open == "basket").all() and trades.pnl.notna().sum() >= 1
 
 
-def test_live_hyper_opens_independent_trades_up_to_max_open(tmp_path):
+def test_live_hyper_opens_independent_trades_up_to_max_open(tmp_path, monkeypatch):
     m1 = synthetic_m1(days=40, seed=6)
     mod = fake_mt5.install(m1, start_bar=20000)
     for name in ("data", "execution", "live"):
@@ -94,7 +94,7 @@ def test_live_hyper_opens_independent_trades_up_to_max_open(tmp_path):
         return n["i"] < 700
     r = live.Runner(cfg, tmp_path, "demo", keep)
     r.events = pd.DatetimeIndex([], tz="UTC"); r.last_cal = 1e18
-    live.time.sleep = lambda s: None
+    monkeypatch.setattr(live.time, "sleep", lambda s: None)  # restored after the test
     r.run()
     opens = [o for o in fake.orders if o["action"] == 1 and "position" not in o]
     assert len(opens) >= 5, "hyper should trade a lot"
@@ -104,7 +104,7 @@ def test_live_hyper_opens_independent_trades_up_to_max_open(tmp_path):
         assert len({round(p.sl, 2) for p in legs}) > 1
 
 
-def test_reset_clears_daily_halt_and_stops_while_running(tmp_path):
+def test_reset_clears_daily_halt_and_stops_while_running(tmp_path, monkeypatch):
     m1 = synthetic_m1(days=40, seed=7)
     fake_mt5.install(m1, start_bar=20000)
     for name in ("data", "execution", "live"):
@@ -129,7 +129,7 @@ def test_reset_clears_daily_halt_and_stops_while_running(tmp_path):
         return n < 8
     r = live.Runner(cfg, tmp_path, "demo", keep)
     r.events = pd.DatetimeIndex([], tz="UTC"); r.last_cal = 1e18
-    live.time.sleep = lambda s: None
+    monkeypatch.setattr(live.time, "sleep", lambda s: None)  # restored after the test
     r.run()
     assert seen["after"] == (False, False, False, 0)
     assert not (tmp_path / "data" / "RESET").exists()
@@ -152,7 +152,7 @@ def test_directional_hyper_only_trades_with_hourly_trend():
     assert basket_signal(m1.iloc[:cut], cfg).equals(s.iloc[:cut])   # no look-ahead
 
 
-def test_live_hyper_records_results_in_trade_memory(tmp_path):
+def test_live_hyper_records_results_in_trade_memory(tmp_path, monkeypatch):
     m1 = synthetic_m1(days=40, seed=6)
     mod = fake_mt5.install(m1, start_bar=20000)
     for name in ("data", "execution", "live"):
@@ -175,7 +175,7 @@ def test_live_hyper_records_results_in_trade_memory(tmp_path):
         return n["i"] < 700
     r = live.Runner(cfg, tmp_path, "demo", keep)
     r.events = pd.DatetimeIndex([], tz="UTC"); r.last_cal = 1e18
-    live.time.sleep = lambda s: None
+    monkeypatch.setattr(live.time, "sleep", lambda s: None)  # restored after the test
     r.run()
     mem = json.loads((tmp_path / "data" / "learning" / "memory.json").read_text())["buckets"]
     live_n = sum(v["n"] for k, v in mem.items() if v.get("last") != "backtest 2020-26")

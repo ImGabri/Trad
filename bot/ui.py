@@ -22,7 +22,12 @@ from urllib.request import Request, urlopen
 
 import yaml
 
+from monitor import app_version
+
 PORT = 8765
+PORTS = 10   # 8765–8774: a second copy (e.g. an older version that cannot hand over) gets the next free port
+# Where a running dashboard leaves its port + handover secret, so the NEXT install can ask it to close (same Windows user)
+HANDOVER = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / ".local" / "share")) / "TradV2" / "dashboard.json"
 APP = Path(__file__).resolve().parent
 DATA = APP / "data"
 log = logging.getLogger("ui")
@@ -327,17 +332,23 @@ def state() -> dict:
     from monitor import Status
     meta = _read_json(DATA / "model" / "model.json")
     summ = _read_json(DATA / "report" / "summary.json")
-    tuned = (DATA / "tuned.yaml").exists()
+    from config import _final_mode, _yaml
+    cfg_path = APP / "config.yaml"
+    mode = _final_mode(_yaml(cfg_path) if cfg_path.exists() else {},
+                       _yaml(DATA / "user.yaml") if (DATA / "user.yaml").exists() else None)
+    from config import _scalp_tuning
+    tuned = (mode == "scalp" and (DATA / "tuned.yaml").exists()  # tuned rules only ever apply to the scalping rules
+             and _scalp_tuning(_yaml(DATA / "tuned.yaml") or {}))
     opt = (summ.get("optimization") or {}) if summ else {}
     chosen = (opt.get("chosen") or {}).get("validate") if opt else None
     env = _env()
     tr = _trades()  # one DB read per refresh (was two)
     return dict(
-        version=(APP / "VERSION").read_text().strip() if (APP / "VERSION").exists() else "dev",
+        version=app_version(), ui_boot=Handler.boot,
         background=background.status(APP), worker=Status.read(DATA / "status.json"), job=JOB.state(),
         model=dict(exists=bool(meta), trained_at=meta.get("trained_at", ""), rows=meta.get("rows", 0),
                    valid_auc=meta.get("valid_auc"), win_rate=meta.get("backtest_win_rate")),
-        tuned=dict(adopted=tuned, validate=chosen), report=(DATA / "report" / "report.html").exists(),
+        tuned=dict(adopted=tuned, validate=chosen), style_mode=mode, report=(DATA / "report" / "report.html").exists(),
         telegram=bool(env.get("TELEGRAM_TOKEN") and env.get("TELEGRAM_CHAT_ID")),
         mt5_login=env.get("MT5_LOGIN", ""), mt5_server=env.get("MT5_SERVER", ""),
         stop_file=(DATA / "STOP").exists(), settings=_user_settings(),
@@ -576,6 +587,8 @@ def action(name: str, body: dict) -> str:
 # --------------------------------------------------------------------------------- server
 class Handler(BaseHTTPRequestHandler):
     token = secrets.token_urlsafe(24)
+    boot = secrets.token_hex(4)    # changes on every dashboard start: an open tab then reloads (fresh page + token)
+    handover = ""                  # secret a newer install presents to take over the port
     last_seen = time.time()
     live_state: dict = dict(ai_conf=None, ai_dir=None, rule_signal=None, session=None,
                               spread_ratio=None, atr_m5=None, entry_blocked=False,
@@ -617,13 +630,21 @@ class Handler(BaseHTTPRequestHandler):
                 pass
             base.update(Handler.live_state)
             return self._send(200, json.dumps(_json_serialize(base), default=str).encode())
-        if self.path == "/api/ping":
-            return self._send(200, b'{"app":"xau-scalper"}')
+        if self.path == "/api/ping":   # which install / version answers here (no secrets)
+            return self._send(200, json.dumps({"app": "xau-scalper", "version": app_version(), "dir": str(APP)}).encode())
         if self.path == "/favicon.ico" and (APP / "assets" / "icon.ico").exists():
             return self._send(200, (APP / "assets" / "icon.ico").read_bytes(), "image/x-icon")
         return self._send(404, b"{}")
 
     def do_POST(self):
+        if self.path == "/api/handover":   # a newer install asks this dashboard to close and free the port
+            if not self._host_ok() or not Handler.handover or self.headers.get("X-Handover") != Handler.handover:
+                return self._send(403, b'{"msg":"forbidden"}')
+            if JOB.running:
+                return self._send(409, b'{"msg":"busy"}')
+            self._send(200, b'{"msg":"bye"}')
+            threading.Timer(0.3, _quit).start()
+            return None
         if not self._host_ok() or self.headers.get("X-Token") != self.token:
             return self._send(403, b'{"msg":"forbidden"}')
         Handler.last_seen = time.time()
@@ -641,12 +662,78 @@ class Handler(BaseHTTPRequestHandler):
         return self._send(200, json.dumps({"msg": msg}).encode())
 
 
-def _already_running() -> bool:
+def _quit():
+    os._exit(0)
+
+
+class _Server(ThreadingHTTPServer):
+    daemon_threads = True
+    allow_reuse_address = os.name != "nt"   # Windows: SO_REUSEADDR would let a 2nd server share a port that is in use
+
+
+def _ping(port: int) -> dict | None:
+    """Our dashboard's {"app", "version", "dir"} if one answers on this port ({"app"} only before 3.0.1), else None."""
     try:
-        with urlopen(Request(f"http://127.0.0.1:{PORT}/api/ping"), timeout=2) as r:
-            return b"xau-scalper" in r.read()
+        with urlopen(Request(f"http://127.0.0.1:{port}/api/ping"), timeout=2) as r:
+            d = json.loads(r.read() or b"{}")
+    except Exception:  # noqa: BLE001
+        return None
+    return d if isinstance(d, dict) and d.get("app") == "xau-scalper" else None
+
+
+def _this_install(d: dict) -> bool:
+    return d.get("version") == app_version() and os.path.normcase(str(d.get("dir", ""))) == os.path.normcase(str(APP))
+
+
+def _ask_to_hand_over(port: int) -> bool:
+    """Ask the (older / other) dashboard on `port` to close, using the secret it left in HANDOVER. True when the port
+    is free afterwards. Dashboards before 3.0.1 cannot be asked: the new one then simply uses the next port."""
+    try:
+        h = json.loads(HANDOVER.read_text(encoding="utf-8"))
+        if int(h.get("port", -1)) != port or not h.get("secret"):
+            return False
+        req = Request(f"http://127.0.0.1:{port}/api/handover", data=b"{}", method="POST",
+                      headers={"X-Handover": str(h["secret"]), "Content-Type": "application/json"})
+        with urlopen(req, timeout=3) as r:
+            r.read()
     except Exception:  # noqa: BLE001
         return False
+    for _ in range(50):
+        if _ping(port) is None:
+            return True
+        time.sleep(0.1)
+    return False
+
+
+def _claim_port(first: int = None, count: int = None):
+    """(port, server) for this dashboard, or (port, None) when this very install is already serving on that port."""
+    first = PORT if first is None else first
+    for port in range(first, first + (PORTS if count is None else count)):
+        d = _ping(port)
+        if d is not None and _this_install(d):
+            return port, None
+        if d is not None and not _ask_to_hand_over(port):
+            continue
+        try:
+            return port, _Server(("127.0.0.1", port), Handler)
+        except OSError:
+            continue
+    raise SystemExit(f"No free port for the dashboard ({first}–{first + PORTS - 1}). Close other copies and retry.")
+
+
+def _upgrade_worker() -> None:
+    """After an update: a background bot still running an older version is restarted with this one (same mode)."""
+    import background
+    if os.name != "nt":
+        return
+    try:
+        st = background.status(APP)
+        if st.get("background") == "on" and st.get("version") != app_version():
+            mode = background.read_control(APP).get("mode") or "demo"
+            log.info("background bot runs %s, this install is %s — restarting it", st.get("version"), app_version())
+            background.start(APP, mode)
+    except Exception:  # noqa: BLE001
+        log.exception("restarting the background bot after the update failed")
 
 
 def make_shortcuts():
@@ -685,16 +772,24 @@ def first_run_defaults() -> None:
 
 
 def serve(open_browser: bool = True, idle_minutes: int = 30):
-    url = f"http://127.0.0.1:{PORT}/"
-    if _already_running():
+    global PORT
+    port, srv = _claim_port()
+    url = f"http://127.0.0.1:{port}/"
+    if srv is None:            # this install's dashboard is already running: just show it
         if open_browser:
             webbrowser.open(url)
         return
+    PORT = port                # Host-header check and links use the port actually served
     DATA.mkdir(exist_ok=True)
     first_run_defaults()
-    Handler.token = secrets.token_urlsafe(24)
-    srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
-    srv.daemon_threads = True
+    Handler.token, Handler.boot, Handler.handover = secrets.token_urlsafe(24), secrets.token_hex(4), secrets.token_urlsafe(24)
+    try:                       # let the next install (an update) ask this dashboard to close
+        HANDOVER.parent.mkdir(parents=True, exist_ok=True)
+        HANDOVER.write_text(json.dumps(dict(port=port, secret=Handler.handover, version=app_version(), dir=str(APP))),
+                            encoding="utf-8")
+    except OSError as e:
+        log.warning("cannot write %s: %s", HANDOVER, e)
+    threading.Thread(target=_upgrade_worker, daemon=True).start()
     threading.Thread(target=make_shortcuts, daemon=True).start()
     if open_browser:
         threading.Timer(0.8, lambda: webbrowser.open(url)).start()

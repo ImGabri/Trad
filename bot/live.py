@@ -180,13 +180,20 @@ class Runner:
         self.tg.send(msg)
         if self.risk.hard_stop:
             self.tg.send("⛔ Survival hard stop is latched — reset it from the launcher before new entries.")
-        self.status.update(state="running", mode=self.mode, symbol=self.gold, server=acc.server, detail="")
+        # the first minute downloads the market history (MT5 may first sync it from the broker) and grades the channel
+        # signals: say so, and keep the heartbeat alive meanwhile (the trading loop takes over once it runs)
+        self.status.update(state="starting", mode=self.mode, symbol=self.gold, server=acc.server,
+                           detail="Loading market history and channel signals (first minute)…")
         _keep_awake(True)
+        import threading
+        self._loop_ts = time.time()
+        threading.Thread(target=self.status.pulse, args=(self._sig_stop, lambda: time.time() - self._loop_ts < 600),
+                         daemon=True, name="status-pulse").start()
         if self.sbook is not None:   # 📡 channel reader: lives exactly as long as this run (no thread pile-up on restarts)
-            import threading
             threading.Thread(target=self._signal_poller, daemon=True, name="signal-poller").start()
         try:
             while self.keep_running():
+                self._loop_ts = time.time()
                 if self.stop_file.exists():
                     self.kill("STOP file")
                     return "killed"

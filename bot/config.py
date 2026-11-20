@@ -61,11 +61,12 @@ def load_config(path: str | Path | None = None, overrides: dict | None = None, u
     raw = _yaml(path)
     data_dir = path.parent / "data"
     tuned = Path(tuned_path) if tuned_path else data_dir / "tuned.yaml"
-    if use_tuned and tuned.exists():  # written by the optimizer
-        t = _yaml(tuned) or {}
-        t.pop("_tuning", None)
-        _deep_update(raw, t)
     user = data_dir / "user.yaml"  # dashboard settings — always win
+    if use_tuned and tuned.exists() and _final_mode(raw, _yaml(user) if user.exists() else None, overrides) == "scalp":
+        t = _yaml(tuned) or {}   # written by the optimizer: it tunes the SCALPING rules only — every other style
+        if _scalp_tuning(t):     # (Perfect, Hyper Max, Signal AI, Basket …) keeps its own tested settings
+            t.pop("_tuning", None)
+            _deep_update(raw, t)
     if user.exists():
         _deep_update(raw, _yaml(user) or {})
     if overrides:
@@ -104,6 +105,30 @@ def load_config(path: str | Path | None = None, overrides: dict | None = None, u
     raw["_path"] = str(path)
     raw["_overrides"] = overrides or {}
     return cfg
+
+
+def _scalp_tuning(t: dict) -> bool:
+    """A tuned.yaml made for the scalping rules. Files before v3.0.1 have no mode: a retrain while a breakout style was
+    active saved that style's own exits (e.g. 40×ATR target, 15 h hold) — far outside the scalping search space."""
+    mode = ((t.get("_tuning") or {}).get("mode") if isinstance(t, dict) else None)
+    if mode:
+        return str(mode).lower() == "scalp"
+    st = (t.get("strategy") or {}) if isinstance(t, dict) else {}
+    try:
+        return float(st.get("tp_atr", 0)) <= 2.0 and float(st.get("sl_atr", 0)) <= 1.5 and \
+            float(st.get("time_stop_minutes", 0)) <= 30
+    except (TypeError, ValueError):
+        return False
+
+
+def _final_mode(*layers) -> str:
+    """strategy.mode after config.yaml → user.yaml → overrides (the last layer that sets it wins)."""
+    mode = "scalp"
+    for d in layers:
+        st = d.get("strategy") if isinstance(d, dict) else None
+        if isinstance(st, dict) and st.get("mode"):
+            mode = str(st["mode"]).lower()
+    return mode
 
 
 def _deep_update(base: dict, upd: dict) -> None:

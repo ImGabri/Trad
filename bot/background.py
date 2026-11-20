@@ -124,4 +124,4 @@ def status(root: Path) -> dict:
         return {"background": "off", **({"last_state": s.get("state")} if s else {})}
     alive = s.get("heartbeat_age_s", 1e9) < 60
     return {"background": "on", "mode": c.get("mode"), "worker": s.get("state") if alive else "no heartbeat",
-            "detail": s.get("detail", ""), "heartbeat_age_s": s.get("heartbeat_age_s")}
+            "detail": s.get("detail", ""), "heartbeat_age_s": s.get("heartbeat_age_s"), "version": s.get("version")}

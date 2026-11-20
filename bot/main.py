@@ -164,20 +164,29 @@ def worker():
         return bool(c.get("enabled")) and c.get("generation") == gen
 
     delay = 5
+    import threading
     from monitor import Status
     status = Status(DATA / "status.json")
+
+    def training(detail: str, **kw):
+        """prepare() with a live heartbeat: a retrain takes minutes and must not look like a dead bot."""
+        status.update(state="retrain", detail=detail)
+        stop = threading.Event()
+        threading.Thread(target=status.pulse, args=(stop,), daemon=True, name="retrain-pulse").start()
+        try:
+            prepare(cfg, cfg.history.years, quiet=True, **kw)
+        finally:
+            stop.set()
     while active():
         try:
             if not ensure_model():  # no bundled models and none trained yet
-                status.update(state="retrain", detail="first-time training")
-                prepare(cfg, cfg.history.years, quiet=True)
+                training("first-time training")
             why = run_live(cfg, background.read_control(APP)["mode"], active, auto_retrain=True)
             if (DATA / "STOP").exists() or why == "killed":
                 break
             if why == "retrain":  # weekend: learn from everything collected this week, then carry on
-                status.update(state="retrain", detail="weekly retrain on all saved data")
                 log.info("weekly retrain starting")
-                prepare(cfg, cfg.history.years, quiet=True, trials=120)
+                training("weekly retrain on all saved data", trials=120)
                 delay = 5
                 cfg = load_config(APP / "config.yaml")
                 continue
@@ -301,7 +310,9 @@ def smoke():
     from synthetic import synthetic_m1
     from prepare import research
     out = APP / "data_smoke"
-    cfg = load_config(APP / "config.yaml", overrides={"backtest": {"wf_window_months": 1, "holdout_months": 1}},
+    # scalping rules: the one rule set the tuner adjusts, so the self-test covers the whole pipeline incl. the optimiser
+    cfg = load_config(APP / "config.yaml", overrides={"backtest": {"wf_window_months": 1, "holdout_months": 1},
+                                                      "strategy": {"mode": "scalp"}},
                       tuned_path=out / "tuned.yaml")
     m1 = synthetic_m1(days=150)
     s = research(cfg, out, m1, {"_equity": 23.0}, trials=8)

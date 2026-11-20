@@ -135,7 +135,8 @@ def optimize(f: pd.DataFrame, p_up: pd.Series, events, cfg, data_dir: Path, tria
     tuned = data_dir / "tuned.yaml"
     if chosen:
         tuned.write_text(yaml.safe_dump(dict(_nest(chosen["params"]),
-                                             _tuning=dict(tune=chosen["tune"], validate=chosen["validate"])),
+                                             _tuning=dict(mode=str(getattr(cfg.strategy, "mode", "scalp")).lower(),
+                                                          tune=chosen["tune"], validate=chosen["validate"])),
                                         sort_keys=False))
         v = chosen["validate"]
         say(f"✓ Adopted tuned rules — validation: {v['n']} trades, account {v['growth_pct']:+.1f} %, PF {v['pf']:.2f}, "

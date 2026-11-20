@@ -66,8 +66,11 @@ The dashboard can rank all strategies by **profit**, **trades per day** or **saf
 ## Troubleshooting
 
 * **"Starting… Connecting to MT5"**: the dashboard shows each startup step. If MT5 does not answer within 90 s you get a
-  clear message — open MT5, close any pop-up, make sure you are logged in, then STOP and START. If the background bot
-  stops answering, the dashboard shows its last log lines.
+  clear message — open MT5, close any pop-up, make sure you are logged in, then STOP and START. The first minute after a
+  start or retrain shows *Loading market history…* (MT5 may first download the history of gold and the related
+  markets). If the background bot really stops answering, the dashboard shows its last log lines.
+* **Retrain report** (`Backtest report` button): the "strategy" row is your style's own entries only — channel-signal
+  trades are not in it. For the 🎯 Perfect family the AI part is a weak helper (AUC ≈ 0.51–0.53).
 * **Daily loss halt / kill switch**: press **🔄 Reset daily limits & stops**.
 * **Logs**: Logs button (or `data\logs\`). **Settings** you change in the dashboard override the strategy preset until you
   pick a strategy again.
@@ -87,6 +90,19 @@ runtime\python.exe main.py kill
 ---
 
 ## History — every version with its research and backtests
+
+### v3.0.1 — smoother updates and retrains
+
+- **Heartbeat during long work:** after a retrain or a restart, the first minute downloads the market history (MT5 may
+  sync it from the broker first). The bot now keeps its heartbeat during that minute and during retrains, so the
+  dashboard shows *Loading market history…* or *Training* instead of "not answering".
+- **Retrains never change a preset strategy:** the rule tuner only adjusts the scalping rules (Active / Careful), and the
+  weekly retrain skips the rule search for every other strategy (faster). A `tuned.yaml` saved by a retrain under a
+  breakout strategy (it held Perfect's 40×ATR target / 15 h hold) is ignored instead of leaking into the scalping styles.
+- **Updates:** a new version's dashboard closes the old one (3.0.1+) or opens on the next free port, and restarts a
+  background bot that still runs older code. Open dashboard tabs reload themselves after a dashboard restart.
+- **Retrain report:** states that the "strategy" row is the style's own entries; channel-signal trades are graded live
+  (dashboard → Signals) and are not part of that backtest.
 
 ### v3.0 — perfecting pass: bug audit, cleaned signal data, honest re-test, simpler dashboard
 
