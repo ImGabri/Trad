@@ -3,6 +3,33 @@
 A self-learning gold scalper with a one-click dashboard. It trades XAUUSD on your PU Prime MT5 demo, runs in
 the background, restarts at every Windows logon and retrains itself every weekend on everything it has collected.
 
+## v2.14 — 🎯🐂 Hyper + H4: bull/bear identifier on the 4-hour chart
+
+**Tested:** 32 combinations.
+- **Trend identifiers:** H4 EMA 20/50, H4 EMA 50/200, D1 EMA 20/50, or none.
+- **Directions:** buy only, or buy and sell.
+- **Chop filter:** H4 ADX > 20, on or off.
+- **Open trades:** 1 or 3.
+
+Each combination ran at €200 and €1,000 in three periods, on top of Hyper Perfect's 12/24/48-hour breakouts.
+
+**Winner: H4 EMA 20/50, buy only, up to 3 trades.** It buys breakouts only while the 4-hour chart is bullish, and
+it sits out bearish 4-hour markets.
+
+| 1 % risk | 2019 – 23 | 2024 – mid-25 | Aug 2025 – Nov 2026 |
+|---|---|---|---|
+| €200 🎯🐂 Hyper + H4 | **+167 %** (dd −71 %) | +921 % (dd −34 %) | **+705 %** (dd −77 %) |
+| €200 🎯⚡ Hyper Perfect | +116 % (dd −65 %) | +1,138 % (dd −53 %) | +602 % (dd −83 %) |
+| €1,000 🎯🐂 Hyper + H4 | **+79 %** (dd −67 %) | +507 % (dd −27 %) | **+96 %** (dd −34 %) |
+| €1,000 🎯⚡ Hyper Perfect | −18 % (dd −82 %) | +522 % | +64 % (dd −50 %) |
+
+- **Trade frequency:** about 1.2 trades a day.
+- **At both sizes:** it was the only fast variant profitable in every period at €200 *and* €1,000.
+- **Selling in bear markets:** still **lost** in 2019–23, even with the H4 filter (€200 was blown). So the
+  identifier is used to *stop buying* in bear markets, not to sell.
+- **Live trend source:** the bot reads the 4-hour trend from about 800 hourly MT5 bars. Checked against the full
+  history, it agreed at 300 of 300 random moments.
+
 ## v2.13 — 🎯⚡ Hyper Perfect (faster Perfect that still made money)
 
 - **How it trades:** the same breakout as Perfect, but it watches the **12-hour, 24-hour and 48-hour** highs at once

@@ -169,3 +169,26 @@ def test_confidence_sizing_scales_risk_in_perfect_only():
     assert risk_pct_for(t, None) == base and risk_pct_for(t, float("nan")) == base
     s = load_config(ROOT / "config.yaml", use_tuned=False, overrides={"strategy": {"mode": "scalp"}})
     assert risk_pct_for(s, 0.9) == s.risk.risk_per_trade_pct
+
+
+def test_h4_regime_blocks_buys_in_a_bearish_4h_market():
+    import numpy as np, pandas as pd
+    from config import load_config
+    from strategy import compute_signals, closed_trend
+    idx = pd.date_range("2026-01-05", periods=60 * 24 * 30, freq="1min", tz="UTC")
+    x = np.arange(len(idx))
+    px = 4000 + np.where(x < len(x) // 2, x * 0.01, (len(x) // 2) * 0.01 - (x - len(x) // 2) * 0.01) \
+        + np.sin(x / 90) * 4 + np.sin(x / 700) * 9
+    from features import build_features
+    m1 = pd.DataFrame({"open": px, "high": px + 0.4, "low": px - 0.4, "close": px, "tick_volume": 1.0, "spread": 0.32},
+                      index=idx)
+    base = {"strategy": {"mode": "turbo", "turbo_lookbacks": [12, 24, 48]}}
+    f = build_features(m1, load_config(ROOT / "config.yaml", use_tuned=False, overrides=base))
+    plain = compute_signals(f, load_config(ROOT / "config.yaml", use_tuned=False, overrides=base))["rule_signal"]
+    base["strategy"]["turbo_regime"] = "h4"
+    h4 = compute_signals(f, load_config(ROOT / "config.yaml", use_tuned=False, overrides=base))["rule_signal"]
+    reg = closed_trend(f, 240, 20, 50)
+    assert (h4 != 0).sum() > 0 and (h4 != 0).sum() <= (plain != 0).sum()
+    assert (reg[h4.to_numpy() > 0] > 0).all()            # every buy happens in a bullish H4 market
+    f2 = f.copy(); f2["h4_regime"] = -1.0                 # live column: bearish → no buys at all
+    assert (compute_signals(f2, load_config(ROOT / "config.yaml", use_tuned=False, overrides=base))["rule_signal"] > 0).sum() == 0

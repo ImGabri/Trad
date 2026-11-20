@@ -204,9 +204,10 @@ def basket_signal(f: pd.DataFrame, cfg) -> pd.Series:
     return (s * (1 if getattr(b, "follow", True) else -1)).astype(int)
 
 
-def closed_trend(f: pd.DataFrame, tf_min: int, fast: int, slow: int) -> np.ndarray:
-    """+1 / −1 / 0 = EMA(fast) vs EMA(slow) on CLOSED tf_min-minute bars, aligned to each M1 bar's close."""
-    c = f["close"].resample(f"{tf_min}min", label="left", closed="left").last().dropna()
+def closed_trend(f: pd.DataFrame, tf_min: int, fast: int, slow: int, close: pd.Series | None = None) -> np.ndarray:
+    """+1 / −1 / 0 = EMA(fast) vs EMA(slow) on CLOSED tf_min-minute bars, aligned to each M1 bar's close.
+    `close` may be a longer, coarser close series (e.g. live H1 bars) to compute the same trend from more history."""
+    c = (f["close"] if close is None else close).resample(f"{tf_min}min", label="left", closed="left").last().dropna()
     t = np.sign(c.ewm(span=fast, adjust=False, min_periods=slow).mean() - c.ewm(span=slow, adjust=False, min_periods=slow).mean())
     t.index = t.index + pd.Timedelta(minutes=tf_min)
     a = pd.merge_asof(pd.DataFrame(index=f.index + pd.Timedelta(minutes=1)), t.rename("t").to_frame(),
@@ -229,6 +230,11 @@ def compute_signals(f: pd.DataFrame, cfg, events: pd.DatetimeIndex | None = None
         for lb in (getattr(cfg.strategy, "turbo_lookbacks", None) or [24]):   # ⚡ Hyper Perfect: 12 + 24 + 48 h
             z = turbo_signal(f, lookback_h=int(lb), direction=d)
             sig = z if sig is None else sig.where(sig != 0, z)
+        if str(getattr(cfg.strategy, "turbo_regime", "") or "").lower() == "h4":
+            # 4-hour bull/bear identifier (EMA20 vs EMA50 on closed H4 bars): buys only in a bullish H4 market,
+            # sells (if enabled) only in a bearish one. Live passes the value in column h4_regime (from H1 history).
+            reg = f["h4_regime"].to_numpy() if "h4_regime" in f else closed_trend(f, 240, 20, 50)
+            sig = sig.where(((sig > 0) & (reg > 0)) | ((sig < 0) & (reg < 0)), 0)
         out["rule_signal"] = sig
     elif mode == "basket":
         out["rule_signal"] = basket_signal(f, cfg)
