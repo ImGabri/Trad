@@ -114,17 +114,37 @@ def atomic_write_text(path: Path, text: str, retries: int = 20, best_effort: boo
     raise err
 
 
+def app_version() -> str:
+    """This install's version (bot/VERSION), 'dev' when missing."""
+    try:
+        return Path(__file__).with_name("VERSION").read_text(encoding="utf-8").strip() or "dev"
+    except OSError:
+        return "dev"
+
+
 class Status:
-    """status.json heartbeat read by the launcher's status screen."""
+    """status.json heartbeat read by the launcher's status screen. Every heartbeat carries the version of the code
+    that wrote it, so a newly installed dashboard can tell that the background bot still runs an older version."""
 
     def __init__(self, path: Path):
         self.path = path
-        self.state: dict = {}
+        self.state: dict = {"version": app_version()}
+        self._lock = threading.Lock()   # the trading loop and the startup pulse thread both write it
 
     def update(self, **kw):
-        self.state.update(kw, heartbeat=time.time())
-        # best effort: a heartbeat that cannot be written this time is simply written again 2 s later
-        atomic_write_text(self.path, json.dumps(self.state, default=str), best_effort=True)
+        with self._lock:
+            self.state.update(kw, heartbeat=time.time())
+            text = json.dumps(self.state, default=str)
+            # best effort: a heartbeat that cannot be written this time is simply written again 2 s later
+            atomic_write_text(self.path, text, best_effort=True)
+
+    def pulse(self, stop, alive=lambda: True, every: float = 15.0) -> None:
+        """Keep the heartbeat fresh from a helper thread while long work runs (a retrain, the first download of
+        market history) so the dashboard does not report a busy bot as dead. Stops when `stop` (an Event) is set or
+        alive() turns False (no progress for too long: then the dashboard SHOULD see the missing heartbeat)."""
+        while not stop.wait(every):
+            if alive():
+                self.update()
 
     @staticmethod
     def read(path: Path) -> dict:

@@ -187,7 +187,11 @@ def research(cfg, data_dir: Path, m1: pd.DataFrame, corr: dict, say=print, trial
     p_ho, _, (ho_a, ho_b) = holdout_predictions(f, cfg)
 
     opt = None
-    if len(p_wf) > 20_000 and trials > 0:
+    mode = str(getattr(cfg.strategy, "mode", "scalp")).lower()
+    if mode != "scalp" and trials > 0:   # presets (Perfect, Hyper Max, Signal AI …) keep their own tested settings
+        say(f"Rule optimisation skipped: the selected strategy ({mode}) uses its own tested settings.")
+        opt = dict(skipped=True, mode=mode)
+    elif len(p_wf) > 20_000 and trials > 0:
         opt = optimize(f, p_wf, events, cfg, data_dir, trials, say=say, equity=equity, outlook=outlook)
     elif trials > 0:
         say("Not enough out-of-sample data to retune rules safely (need ~2 weeks of walk-forward predictions).")
@@ -267,10 +271,19 @@ def write_report(out_dir: Path, sections: dict, folds: list, imp: pd.Series, cfg
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    parts = [f"<h1>XAUUSD scalper — backtest report</h1><p>Generated {datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC. "
+    logging.getLogger("matplotlib.category").setLevel(logging.WARNING)   # "Using categorical units …" is not news
+    mode = str(getattr(cfg.strategy, "mode", "scalp")).lower()
+    what = {"turbo": "the selected breakout strategy's own trades (🎯 Perfect family)", "scalp": "the scalping rules + AI",
+            "basket": "the basket / fast style", "ai": "the pure-AI style", "signals": "no own entries (signal-only style)"}
+    sig_on = bool(getattr(getattr(cfg, "signals", None), "enabled", False))
+    parts = [f"<h1>XAUUSD trader — backtest report</h1><p>Generated {datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC. "
              f"Account {cfg.broker.account_type}. Costs: spread per bar (fallback ${cfg.backtest.spread_cost}), "
              f"${__import__('config').commission_per_side(cfg)}/side/lot commission, {cfg.backtest.slippage_pips} pips slippage. AI threshold "
-             f"{cfg.strategy.confidence_threshold}.</p>"]
+             f"{cfg.strategy.confidence_threshold}.</p>"
+             f"<p><b>“strategy”</b> = {what.get(mode, mode)}."
+             + (" The Telegram channel-signal trades of this style are <b>not</b> part of this report: they are graded "
+                "live on real prices (dashboard → Signals) and their backtest is in the README." if sig_on else "")
+             + "</p>"]
     for name, s in sections.items():
         res = s["results"]
         parts.append(f"<h2>{name.replace('_', '-')} ({s['period'][0]:%Y-%m-%d} → {s['period'][1]:%Y-%m-%d}), "
@@ -294,7 +307,10 @@ def write_report(out_dir: Path, sections: dict, folds: list, imp: pd.Series, cfg
         m = res["strategy"]["metrics"]
         if m.get("exit_reasons"):
             parts.append("<p>Exit reasons: " + ", ".join(f"{k} {v}" for k, v in m["exit_reasons"].items()) + "</p>")
-    if opt:
+    if opt and opt.get("skipped"):
+        parts.append("<h2>Rule optimisation</h2><p>Skipped — the selected strategy uses its own tested settings "
+                     "(the tuner only adjusts the scalping rules).</p>")
+    elif opt:
         parts.append("<h2>Rule optimisation</h2><p>" + ("Adopted tuned rules (data/tuned.yaml)." if opt["adopted"] else
                      "No rule set was profitable on both tuning and validation — defaults kept; run watch mode only.") + "</p>")
         rows = [dict(trial=r["trial"], **{k.split(".")[1]: v for k, v in r["params"].items()},

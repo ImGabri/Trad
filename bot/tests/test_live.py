@@ -17,7 +17,7 @@ LOOSE = {"strategy": {"mode": "scalp", "m15_adx_min": 0, "level_tolerance_atr": 
          "sessions": {"asia_min_confidence": 0.5}}
 
 
-def test_runner_trades_and_kill(tmp_path):
+def test_runner_trades_and_kill(tmp_path, monkeypatch):
     m1 = synthetic_m1(days=40, seed=3)
     mod = fake_mt5.install(m1, start_bar=20000)
     for name in ("data", "execution", "live"):
@@ -44,7 +44,7 @@ def test_runner_trades_and_kill(tmp_path):
         return n["i"] < 500
     r = live.Runner(cfg, tmp_path, "demo", keep)
     r.events = pd.DatetimeIndex([], tz="UTC"); r.last_cal = 1e18  # no network in tests
-    live.time.sleep = lambda s: None
+    monkeypatch.setattr(live.time, "sleep", lambda s: None)  # restored after the test
     r.run()
     fake = mod._fake
     opened = [o for o in fake.orders if o["action"] == 1 and "position" not in o]

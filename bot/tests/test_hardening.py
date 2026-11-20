@@ -190,3 +190,99 @@ def test_dashboard_input_is_validated(tmp_path, monkeypatch):
     assert "MT5_PASSWORD=secret" in env and "MT5_LOGIN=2" in env            # an empty box never erases the password
     monkeypatch.setattr(ui.JOB, "start", lambda *a, **k: False)
     assert ui.action("reset", {}).startswith("Busy")
+
+
+def test_retrain_rules_never_touch_preset_strategies(tmp_path):
+    import yaml
+    import config
+    import ui
+    (tmp_path / "data").mkdir()
+    shutil.copy(ROOT / "config.yaml", tmp_path / "config.yaml")
+    perfect_exits = {"strategy": {"tp_atr": 40.0, "sl_atr": 3.0, "time_stop_minutes": 900, "trail_trigger_atr": 99.0},
+                     "risk": {"max_concurrent": 1, "max_daily_trades": 300}, "analyst": {"veto_conf": 0.0},
+                     "sessions": {"asia_enabled": True}}   # what a retrain under Signal AI ×2 saved before v3.0.1
+    scalp_tuning = {"strategy": {"tp_atr": 1.25, "sl_atr": 1.0, "time_stop_minutes": 15}, "_tuning": {"mode": "scalp"}}
+
+    def eff(style, tuned):
+        (tmp_path / "data" / "user.yaml").write_text(yaml.safe_dump(ui.STYLES[style]))
+        (tmp_path / "data" / "tuned.yaml").write_text(yaml.safe_dump(tuned))
+        config._YAML_CACHE.clear()
+        c = config.load_config(tmp_path / "config.yaml")
+        return c.strategy.tp_atr, c.strategy.time_stop_minutes, c.risk.max_concurrent
+    def plain(style):
+        (tmp_path / "data" / "tuned.yaml").unlink(missing_ok=True)
+        (tmp_path / "data" / "user.yaml").write_text(yaml.safe_dump(ui.STYLES[style]))
+        config._YAML_CACHE.clear()
+        c = config.load_config(tmp_path / "config.yaml")
+        return c.strategy.tp_atr, c.strategy.time_stop_minutes, c.risk.max_concurrent
+    for style in ("signalai2x", "signalai", "perfect", "hypermax5", "signalhyper", "active", "basket"):
+        assert eff(style, perfect_exits) == plain(style), style      # a breakout-made tuning applies nowhere
+    assert eff("active", scalp_tuning)[:2] == (1.25, 15)                 # a real scalping tuning: scalping styles only
+    assert eff("signalai", scalp_tuning) == plain("signalai")
+
+
+def test_status_pulse_keeps_the_heartbeat_fresh(tmp_path):
+    import threading
+    from monitor import Status, app_version
+    st = Status(tmp_path / "status.json")
+    st.update(state="starting")
+    first = Status.read(tmp_path / "status.json")
+    assert first["version"] == app_version()
+    stop = threading.Event()
+    th = threading.Thread(target=st.pulse, args=(stop,), kwargs=dict(every=0.05), daemon=True)
+    th.start()
+    time.sleep(0.3)
+    stop.set(); th.join(1)
+    beat = Status.read(tmp_path / "status.json")
+    assert beat["heartbeat"] > first["heartbeat"] and beat["state"] == "starting" and not th.is_alive()
+
+
+def test_new_dashboard_takes_over_from_an_older_one(tmp_path, monkeypatch):
+    import json as _json
+    import socket
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    import ui
+    monkeypatch.setattr(ui, "HANDOVER", tmp_path / "dashboard.json")
+
+    def free_port():
+        with socket.socket() as so:
+            so.bind(("127.0.0.1", 0))
+            return so.getsockname()[1]
+    # 1) an older dashboard (no handover support) keeps its port: the new one serves on the next free port
+    class Old(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200); self.end_headers(); self.wfile.write(b'{"app":"xau-scalper"}')
+        def log_message(self, *a):
+            pass
+    p = free_port()
+    old = ThreadingHTTPServer(("127.0.0.1", p), Old)
+    threading.Thread(target=old.serve_forever, daemon=True).start()
+    try:
+        port, srv = ui._claim_port(first=p, count=4)
+        assert port != p and srv is not None
+        srv.server_close()
+    finally:
+        old.shutdown(); old.server_close()
+    # 2) a dashboard of another version that supports the handover closes and the new one takes the same port
+    p = free_port()
+    monkeypatch.setattr(ui.Handler, "handover", "s3cret")
+    monkeypatch.setattr(ui, "PORT", p)                                   # Host-header check of the serving dashboard
+    prev = ui._Server(("127.0.0.1", p), ui.Handler)
+    threading.Thread(target=prev.serve_forever, daemon=True).start()
+    monkeypatch.setattr(ui, "_quit", lambda: (prev.shutdown(), prev.server_close()))
+    (tmp_path / "dashboard.json").write_text(_json.dumps(dict(port=p, secret="s3cret")))
+    monkeypatch.setattr(ui, "_this_install", lambda d: False)            # it answers as a different version
+    port, srv = ui._claim_port(first=p, count=2)
+    try:
+        assert port == p and srv is not None
+    finally:
+        srv.server_close()
+    # 3) the same install already serving: just reuse it
+    monkeypatch.setattr(ui, "_this_install", lambda d: True)
+    again = ui._Server(("127.0.0.1", p), ui.Handler)
+    threading.Thread(target=again.serve_forever, daemon=True).start()
+    try:
+        assert ui._claim_port(first=p, count=2) == (p, None)
+    finally:
+        again.shutdown(); again.server_close()
