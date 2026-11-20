@@ -28,6 +28,9 @@ AUSTRIA_TZ_NAME = "Europe/Vienna"
 
 TIMEFRAMES = {"M1": "TIMEFRAME_M1", "M5": "TIMEFRAME_M5", "M15": "TIMEFRAME_M15", "H1": "TIMEFRAME_H1"}
 TF_MINUTES = {"M1": 1, "M5": 5, "M15": 15, "H1": 60}
+RATES_TAIL = 16           # bars re-read per update of a cached window (≥ 1 bar of overlap after up to 14 new ones)
+RATES_FULL_REFRESH = 60   # a cached window is downloaded in full again after this many tail updates
+SYMBOLS_TTL_S = 300       # mt5.symbols_get() is read once per connect (it lists every symbol of the server)
 
 
 # --------------------------------------------------------------------------------------- MT5
@@ -39,6 +42,9 @@ class MT5Connection:
             raise RuntimeError("MetaTrader5 package not installed (Windows + MT5 terminal required)")
         self.cfg = cfg
         self.server_offset: timedelta | None = None
+        self.generation = 0            # +1 on every successful (re)connect: invalidates the caches below
+        self._rates_cache: dict = {}   # (symbol, tf, count) -> {"df", "gen", "updates"}
+        self._symbols: tuple[float, list] | None = None
 
     def connect(self) -> bool:
         s = self.cfg.secrets
@@ -59,6 +65,9 @@ class MT5Connection:
             log.warning("Algo Trading is disabled in the terminal — enable the green 'Algo Trading' button")
         log.info("Connected: login=%s server=%s balance=%.2f leverage=1:%s",
                  info.login, info.server, info.balance, info.leverage)
+        self.generation += 1
+        self._rates_cache.clear()
+        self._symbols = None
         self._resolve_offset()
         return True
 
@@ -143,11 +152,18 @@ class MT5Connection:
         return (dt_utc + (self.server_offset or timedelta(0))).replace(tzinfo=timezone.utc)
 
     # Symbols ------------------------------------------------------------------------------
+    def symbols(self) -> list:
+        """mt5.symbols_get(), read once per connection (startup resolves gold and ~30 context markets from it)."""
+        now = time.monotonic()
+        if self._symbols is None or now - self._symbols[0] > SYMBOLS_TTL_S:
+            self._symbols = (now, list(mt5.symbols_get() or []))
+        return self._symbols[1]
+
     def resolve_symbol(self, candidates: Iterable[str], suffix: str = "", names: dict | None = None) -> str | None:
         """First candidate present on the server. PU Prime adds account-type suffixes (e.g. XAUUSD.s),
         so each alias is tried with the primary symbol's suffix first, then bare, then any suffix."""
         if names is None:
-            names = {s.name.upper(): s.name for s in (mt5.symbols_get() or [])}
+            names = {s.name.upper(): s.name for s in self.symbols()}
         for c in candidates:
             for name in dict.fromkeys([c + suffix, c]):
                 real = names.get(name.upper())
@@ -163,13 +179,13 @@ class MT5Connection:
         """{market: PU Prime symbol or None} for every market in config `context`."""
         ctx = getattr(cfg, "context", None)
         names = vars(ctx) if ctx is not None else {}
-        allnames = {s.name.upper(): s.name for s in (mt5.symbols_get() or [])}  # read the symbol list ONCE
+        allnames = {s.name.upper(): s.name for s in self.symbols()}  # read the symbol list ONCE
         return {k: self.resolve_symbol(v.mt5, suffix, allnames) for k, v in names.items()}
 
     def resolve_gold(self, wanted: str = "XAUUSD") -> str:
         """Standard 24/5 gold with full trading rights; never the XAUUSD247 contract."""
         full = getattr(mt5, "SYMBOL_TRADE_MODE_FULL", 4)
-        hits = [s for s in (mt5.symbols_get() or [])
+        hits = [s for s in self.symbols()
                 if s.name.upper().startswith(wanted.upper()) and "247" not in s.name and s.trade_mode == full]
         exact = [s for s in hits if s.name.upper() == wanted.upper()]
         pick = (exact or sorted(hits, key=lambda s: len(s.name)))[:1]
@@ -212,6 +228,26 @@ class MT5Connection:
         df = self._bars_frame(pd.DataFrame(arr), symbol)
         return df.iloc[:-1]  # last bar is still forming — never use it for signals
 
+    def rates_latest_cached(self, symbol: str, tf: str, count: int) -> pd.DataFrame:
+        """Same frame as rates_latest(symbol, tf, count), without re-downloading the whole window on every call:
+        the closed bars are kept and only the newest RATES_TAIL bars are read and appended. The re-read bars must
+        overlap the kept ones exactly, otherwise (gap of more than RATES_TAIL - 2 bars, a revised bar, a shorter
+        history than `count`) it downloads the full window, as it also does after a reconnect and every
+        RATES_FULL_REFRESH updates."""
+        key = (symbol, tf, count)
+        c = self._rates_cache.get(key)
+        if c is not None and c["gen"] == self.generation and c["updates"] < RATES_FULL_REFRESH:
+            merged = _append_overlapping(c["df"], self.rates_latest(symbol, tf, RATES_TAIL))
+            if merged is not None:
+                c["df"], c["updates"] = merged.iloc[-(count - 1):], c["updates"] + 1
+                return c["df"]
+        df = self.rates_latest(symbol, tf, count)
+        if len(df) == count - 1:  # a full window: later calls can extend it
+            self._rates_cache[key] = dict(df=df, gen=self.generation, updates=0)
+        else:  # history still loading / shorter than asked: never extend a partial window
+            self._rates_cache.pop(key, None)
+        return df
+
     def ticks_range(self, symbol: str, start: datetime, end: datetime) -> pd.DataFrame:
         arr = mt5.copy_ticks_range(symbol, self.to_server(start), self.to_server(end), mt5.COPY_TICKS_ALL)
         if arr is None or not len(arr):
@@ -230,6 +266,25 @@ class MT5Connection:
         out = df[["open", "high", "low", "close", "tick_volume"]].astype(float)
         out["spread"] = df["spread"].astype(float) * point  # MT5 bar spread is in points → convert to $
         return out.sort_index()
+
+
+def _append_overlapping(old: pd.DataFrame, new: pd.DataFrame) -> pd.DataFrame | None:
+    """old + the bars of `new` after old's last bar, if new starts inside old and every overlapping bar is
+    identical (same times and values) to old's last bars; None when that cannot be proven (→ full download)."""
+    if old.empty or new.empty or list(new.columns) != list(old.columns) or new.index.dtype != old.index.dtype:
+        return None
+    last = old.index[-1]
+    ov = new[new.index <= last]
+    if len(ov) == 0 or len(ov) > len(old):
+        return None
+    tail = old.iloc[-len(ov):]
+    if not (tail.index.equals(ov.index) and all(tail[c].dtype == ov[c].dtype for c in old.columns)
+            and np.array_equal(tail.to_numpy(), ov.to_numpy(), equal_nan=True)):
+        return None
+    add = new.iloc[len(ov):]
+    if len(add) and not (add.index[0] > last and add.index.is_monotonic_increasing):
+        return None
+    return old if add.empty else pd.concat([old, add])
 
 
 def remember_terminal(data_dir: Path):

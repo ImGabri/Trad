@@ -37,10 +37,14 @@ def key_levels(f: pd.DataFrame, bias: pd.Series, cfg) -> pd.DataFrame:
 
 
 def at_key_level(f: pd.DataFrame, levels: pd.DataFrame, cfg) -> pd.Series:
-    tol = cfg.strategy.level_tolerance_atr * f["m5_atr"]
-    # touched during the bar: level within [low - tol, high + tol]
-    near = [(levels[c] >= f["low"] - tol) & (levels[c] <= f["high"] + tol) for c in levels]
-    return pd.concat(near, axis=1).any(axis=1)
+    tol = (cfg.strategy.level_tolerance_atr * f["m5_atr"]).to_numpy()
+    # touched during the bar: level within [low - tol, high + tol] (numpy: same comparisons, no per-level frames)
+    lo, hi = f["low"].to_numpy() - tol, f["high"].to_numpy() + tol
+    near = np.zeros(len(f), bool)
+    for c in levels:
+        v = levels[c].to_numpy()
+        near |= (v >= lo) & (v <= hi)
+    return pd.Series(near, index=f.index)
 
 
 def m1_trigger(f: pd.DataFrame, cfg) -> pd.Series:
@@ -52,11 +56,10 @@ def m1_trigger(f: pd.DataFrame, cfg) -> pd.Series:
         v = f["tick_volume"]
         rising = pd.concat([v.shift(i) > v.shift(i + 1) for i in range(n - 1)], axis=1).all(axis=1)
         up, dn = up & rising, dn & rising
-    # VOLUME CONFIRMATION: require above-median volume for trend triggers
-    vol_med = f["tick_volume"].rolling(20).median()
-    high_vol = f["tick_volume"] > vol_med * getattr(cfg.strategy, "vol_confirm_mult", 1.0)
-    # only apply volume filter when bias is non-zero (trend-seeking)
-    vol_ok = high_vol if getattr(cfg.strategy, "vol_confirm_mult", 1.0) > 1.0 else True
+    # VOLUME CONFIRMATION: require above-median volume for trend triggers (only when the multiplier is > 1;
+    # the rolling median is only computed then)
+    mult = getattr(cfg.strategy, "vol_confirm_mult", 1.0)
+    vol_ok = (f["tick_volume"] > f["tick_volume"].rolling(20).median() * mult) if mult > 1.0 else True
     up = up & vol_ok
     dn = dn & vol_ok
     
@@ -148,15 +151,21 @@ def news_phase(idx: pd.DatetimeIndex, events: pd.DatetimeIndex | None, cfg) -> p
     return pd.DataFrame({"news_phase": phase, "event_id": ev_id}, index=idx)
 
 
+def _closed_h1(f: pd.DataFrame) -> pd.DataFrame:
+    """H1 high / low / close resampled from the M1 rows (bars with no M1 rows dropped)."""
+    g = f[["high", "low", "close"]].resample("60min", label="left", closed="left")
+    return pd.DataFrame({"high": g["high"].max(), "low": g["low"].min(), "close": g["close"].last()}).dropna()
+
+
 def turbo_signal(f: pd.DataFrame, lookback_h: int = 24, ema_fast: int = 20, ema_slow: int = 50,
-                 direction: str = "long") -> pd.Series:
+                 direction: str = "long", h1: pd.DataFrame | None = None) -> pd.Series:
     """🚀 Turbo: buy the first M1 close above the highest high of the last 24 CLOSED H1 bars, only while the closed-H1
     EMA20 > EMA50 trend is up; at most one signal per clock hour. `direction="both"` also SELLS the first close below
     the lowest low of the last 24 H1 bars while EMA20 < EMA50 (research: better in 2024–26, blew €100 in 2019–23).
-    Decided at the M1 close (no look-ahead: H1 values join on H1 close time)."""
+    Decided at the M1 close (no look-ahead: H1 values join on H1 close time).
+    `h1`: the same frame `_closed_h1(f)` precomputed (compute_signals shares it between the lookbacks)."""
     idx = f.index
-    g = f[["high", "low", "close"]].resample("60min", label="left", closed="left")
-    h1 = pd.DataFrame({"high": g["high"].max(), "low": g["low"].min(), "close": g["close"].last()}).dropna()
+    h1 = _closed_h1(f) if h1 is None else h1
     ef = h1.close.ewm(span=ema_fast, adjust=False, min_periods=ema_fast).mean()
     es = h1.close.ewm(span=ema_slow, adjust=False, min_periods=ema_slow).mean()
     x = pd.DataFrame({"up": np.sign(ef - es), "hi": h1.high.rolling(lookback_h).max(), "lo": h1.low.rolling(lookback_h).min()})
@@ -240,7 +249,7 @@ def prev_level_break(f: pd.DataFrame, period: str = "D", direction: str = "both"
     ph = D.hi.where(full).ffill().shift(1); pl = D.lo.where(full).ffill().shift(1)
     key = keys(idx)
     if not own:  # live: the current (partial) period may not be in src yet → extend
-        allk = D.index.union(pd.DatetimeIndex(np.unique(key)))
+        allk = D.index.union(pd.DatetimeIndex(key.unique()).sort_values())  # = np.unique(key), without an object sort
         ph = D.hi.where(full).reindex(allk).ffill().shift(1); pl = D.lo.where(full).reindex(allk).ffill().shift(1)
     PH = pd.Series(ph.reindex(key).to_numpy(), index=idx); PL = pd.Series(pl.reindex(key).to_numpy(), index=idx)
     c = f["close"]; up, dn = c > PH, c < PL
@@ -284,8 +293,9 @@ def compute_signals(f: pd.DataFrame, cfg, events: pd.DatetimeIndex | None = None
     if mode == "turbo":
         d = str(getattr(cfg.strategy, "turbo_direction", "long"))
         sig = None
+        h1 = _closed_h1(f)  # resampled once, shared by every lookback
         for lb in (getattr(cfg.strategy, "turbo_lookbacks", None) or [24]):   # ⚡ Hyper Perfect: 12 + 24 + 48 h
-            z = turbo_signal(f, lookback_h=int(lb), direction=d)
+            z = turbo_signal(f, lookback_h=int(lb), direction=d, h1=h1)
             sig = z if sig is None else sig.where(sig != 0, z)
         reg = None
         if str(getattr(cfg.strategy, "turbo_regime", "") or "").lower() == "h4":

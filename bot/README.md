@@ -3,6 +3,37 @@
 A self-learning gold scalper with a one-click dashboard. It trades XAUUSD on your PU Prime MT5 demo, runs in
 the background, restarts at every Windows logon and retrains itself every weekend on everything it has collected.
 
+## v2.17 — re-optimised Hyper Max 5, and a faster bot
+
+**Hyper Max 5 exits re-optimised.** 28 exit and risk variants were tested: stop 2–4 × ATR, target 20/40 × ATR,
+trailing on/off, 15 h vs 24 h hold, and 0.75 / 1 / 1.5 % risk. The winner was chosen on 2019–25 only and then
+checked on the unseen Aug 2025 – Nov 2026 period.
+
+The change: **hold trades up to 24 h instead of 15 h.**
+
+| Hyper Max 5, 1 % risk | 2019 – 23 | 2024 – mid-25 | Aug 2025 – Nov 2026 (unseen) |
+|---|---|---|---|
+| €200, 15 h hold | +197 % | +1,303 % | +1,317 % |
+| €200, **24 h hold** | **+265 %** | +1,304 % | +1,046 % |
+| €1,000, 15 h hold | +142 % | +788 % | +325 % |
+| €1,000, **24 h hold** | **+356 %** | **+907 %** | **+349 %** |
+
+- **Verified end to end** through the app's own presets, signals and engine. The worst drawdown is still large,
+  up to −88 %.
+- **Rejected:**
+  - trailing stops and 2 × ATR stops: worse in every period
+  - 1.5 % risk: highest profit, but −96 % drawdowns
+- **Fixed:** a style's own hold time was being overwritten by the default Perfect exits.
+
+**Faster live bot.** It does the same work and makes identical decisions, checked on 2,250 simulated bars.
+- **Data downloads:** the bot no longer re-downloads 13,000 one-minute bars, the related markets and 800 hourly
+  bars every minute. It keeps them and only fetches the newest bars, with a full refresh on any gap, revised bar or
+  reconnect, and every 60 minutes.
+- **Processing speed:** each closed minute is about 25 % faster (≈ 190 ms instead of ≈ 260 ms on real gold data),
+  and the slowest minutes are about 3 × faster.
+- **Symbol list:** the MT5 symbol list is read once per connection.
+- **Database:** position data is only written when it changes, instead of twice a second.
+
 ## v2.16 — 🎯🔥⚡ Hyper Max 5 (faster Hyper Max)
 
 **What was tested:** 21 faster versions of Hyper Max, each at up to 3, 5 or 8 open trades, at €200 and €1,000,

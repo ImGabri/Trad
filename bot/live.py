@@ -42,6 +42,7 @@ class Runner:
         self.store = Store(self.data_dir / "xau.db")
         self.store.conn.execute("CREATE TABLE IF NOT EXISTS live_positions (ticket INTEGER PRIMARY KEY, "
                                 "json TEXT)")
+        self._meta_json: dict[int, str] = {}  # live_positions rows as last read / written by this runner
         self.model = DirectionModel.load(self.data_dir / "model")
         self.learn_dir = self.data_dir / "learning"
         self.outcome = OutcomeModel.load(self.learn_dir)  # learns from the bot's own trades
@@ -94,13 +95,20 @@ class Runner:
         self.state_path.write_text(json.dumps(self.state, indent=2, default=str))
 
     def _pos_meta(self) -> dict[int, dict]:
-        return {t: json.loads(j) for t, j in self.store.conn.execute("SELECT ticket, json FROM live_positions")}
+        rows = self.store.conn.execute("SELECT ticket, json FROM live_positions").fetchall()
+        self._meta_json = dict(rows)  # what the table holds now: lets _set_meta skip unchanged rewrites
+        return {t: json.loads(j) for t, j in rows}
 
     def _set_meta(self, ticket: int, meta: dict | None):
         if meta is None:
             self.store.conn.execute("DELETE FROM live_positions WHERE ticket=?", (ticket,))
+            self._meta_json.pop(ticket, None)
         else:
-            self.store.conn.execute("INSERT OR REPLACE INTO live_positions VALUES (?,?)", (ticket, json.dumps(meta)))
+            j = json.dumps(meta)
+            if self._meta_json.get(ticket) == j:  # position management runs every 0.5 s: no commit when unchanged
+                return
+            self.store.conn.execute("INSERT OR REPLACE INTO live_positions VALUES (?,?)", (ticket, j))
+            self._meta_json[ticket] = j
         self.store.conn.commit()
 
     # ------------------------------------------------------------------ main
@@ -411,13 +419,14 @@ class Runner:
 
     def _on_bar(self):
         cfg = self.cfg
-        m1 = self.conn.rates_latest(self.gold, "M1", M1_HISTORY + 1)
+        # cached windows: only the newest bars are downloaded each minute (identical frames, see rates_latest_cached)
+        m1 = self.conn.rates_latest_cached(self.gold, "M1", M1_HISTORY + 1)
         corr = {}
         for k, sym in self.corr.items():
             used = any(c.startswith(k + "_chg") for c in self.model.features) or \
                 (self.analyst is not None and any(c.startswith(k + "_r") for c in self.analyst.features))
             if sym and used:
-                bars = self.conn.rates_latest(sym, "M1", 1600)  # ≥ 1 day: rolling silver beta needs it
+                bars = self.conn.rates_latest_cached(sym, "M1", 1600)  # ≥ 1 day: rolling silver beta needs it
                 corr[k] = bars["close"] if not bars.empty else None
         now = pd.Timestamp.now(tz="UTC")
         ticks = self.conn.ticks_range(self.gold, (now - pd.Timedelta(minutes=5)).to_pydatetime(), now.to_pydatetime())
@@ -429,7 +438,7 @@ class Runner:
         f = build_features(m1, cfg, corr, micro, self.events)
         if self._turbo_mode() and (str(getattr(cfg.strategy, "turbo_regime", "") or "").lower() == "h4"
                                    or getattr(cfg.strategy, "turbo_extras", None)):
-            h1 = self.conn.rates_latest(self.gold, "H1", 800)   # ~33 days: H4 trend, 20-day and last-week highs
+            h1 = self.conn.rates_latest_cached(self.gold, "H1", 800)   # ~33 days: H4 trend, 20-day and last-week highs
             f["h4_regime"] = self._h4_regime(f, h1)
         else:
             h1 = None
@@ -561,7 +570,7 @@ class Runner:
     def _h4_regime(self, f: pd.DataFrame, h1: pd.DataFrame | None = None):
         """H4 EMA20/50 trend from ~800 closed H1 bars (more history than the M1 window), aligned to f."""
         from strategy import closed_trend
-        h1 = self.conn.rates_latest(self.gold, "H1", 800) if h1 is None else h1
+        h1 = self.conn.rates_latest_cached(self.gold, "H1", 800) if h1 is None else h1
         close = h1["close"] if not h1.empty else None
         return closed_trend(f, 240, 20, 50, close=close)
 
