@@ -27,6 +27,11 @@ it sits out bearish 4-hour markets.
 - **At both sizes:** it was the only fast variant profitable in every period at €200 *and* €1,000.
 - **Selling in bear markets:** still **lost** in 2019–23, even with the H4 filter (€200 was blown). So the
   identifier is used to *stop buying* in bear markets, not to sell.
+- **Also tested, not added (144 more backtests):**
+  - **Sells:** they lost with every bull/bear identifier (H4, M15 20/50, M15 50/200, H4 + M15). Sell-only averaged
+    −0.07 to −0.14 R per trade in 2019–23 and −0.02 to −0.22 R in 2024–25. They only made money from Aug 2025.
+  - **A 15-minute identifier:** M15 20/50 was faster (about 1.6 trades a day) and good at €200. At €1,000 it lost
+    5 % in 2019–23 (dd −82 %). H4 alone stays the best.
 - **Live trend source:** the bot reads the 4-hour trend from about 800 hourly MT5 bars. Checked against the full
   history, it agreed at 300 of 300 random moments.
 
