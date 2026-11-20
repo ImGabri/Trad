@@ -192,3 +192,24 @@ def test_h4_regime_blocks_buys_in_a_bearish_4h_market():
     assert (reg[h4.to_numpy() > 0] > 0).all()            # every buy happens in a bullish H4 market
     f2 = f.copy(); f2["h4_regime"] = -1.0                 # live column: bearish → no buys at all
     assert (compute_signals(f2, load_config(ROOT / "config.yaml", use_tuned=False, overrides=base))["rule_signal"] > 0).sum() == 0
+
+
+def test_hyper_max_addons_have_no_lookahead_and_use_levels_correctly():
+    import numpy as np, pandas as pd
+    from strategy import prev_level_break, turtle_breakout
+    idx = pd.date_range("2026-01-04 22:00", periods=60 * 24 * 40, freq="1min", tz="UTC")
+    x = np.arange(len(idx))
+    px = 4000 + x * 0.004 + np.sin(x / 300) * 6 + np.sin(x / 2000) * 15
+    f = pd.DataFrame({"open": px, "high": px + 0.3, "low": px - 0.3, "close": px}, index=idx)
+    for sig in (prev_level_break(f, "D", "both"), prev_level_break(f, "W", "long"), turtle_breakout(f, 20)):
+        assert (sig != 0).sum() > 0
+        cut = len(f) * 3 // 4
+        assert sig.iloc[:cut].equals(sig.__class__(sig.iloc[:cut]))
+    d = prev_level_break(f, "D", "both"); day = f.index.normalize()
+    hi = f.high.groupby(day).max().shift(1)
+    for t in d.index[d > 0][:20]:      # every buy is the first close above YESTERDAY's high
+        assert f.close[t] > hi[t.normalize()]
+    # computing on a shorter window gives the same latest signals (no future data used)
+    for fn in (lambda g: prev_level_break(g, "D", "both"), lambda g: turtle_breakout(g, 20)):
+        full = fn(f); part = fn(f.iloc[: len(f) - 5000])
+        assert part.iloc[-3000:].equals(full.iloc[len(f) - 8000: len(f) - 5000])

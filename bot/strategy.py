@@ -215,7 +215,64 @@ def closed_trend(f: pd.DataFrame, tf_min: int, fast: int, slow: int, close: pd.S
     return a.fillna(0).to_numpy()
 
 
-def compute_signals(f: pd.DataFrame, cfg, events: pd.DatetimeIndex | None = None) -> pd.DataFrame:
+def _first_per_key(ev: pd.Series, key) -> pd.Series:
+    return ev & (ev.astype(int).groupby(key).cumsum() == 1)
+
+
+def prev_level_break(f: pd.DataFrame, period: str = "D", direction: str = "both", h4: np.ndarray | None = None,
+                     src: pd.DataFrame | None = None) -> pd.Series:
+    """Break of the previous COMPLETED day's (UTC day) or week's (Sunday 22:00 UTC week) high/low by an M1 close; first
+    break only, one entry per day/week. `h4`: only in the H4 trend direction. `src`: a longer bar history (e.g. live H1
+    bars) to read the previous period's levels from; default = f itself. Research: agent session study (2019–2026)."""
+    idx = f.index
+    shift_h = 2 if period == "W" else 0
+    def keys(ix):
+        t = ix + pd.Timedelta(hours=shift_h)
+        day = t.normalize()
+        return day - pd.to_timedelta(t.dayofweek, unit="D") if period == "W" else day
+    own = src is None
+    src = f if own else src
+    minbars = (1500 if period == "W" else 300) if own else (25 if period == "W" else 5)  # M1 vs H1 bars per full period
+    k_src = keys(src.index)
+    g = src.groupby(k_src)
+    D = pd.DataFrame({"hi": g["high"].max(), "lo": g["low"].min(), "n": g.size()})
+    full = D.n >= minbars
+    ph = D.hi.where(full).ffill().shift(1); pl = D.lo.where(full).ffill().shift(1)
+    key = keys(idx)
+    if not own:  # live: the current (partial) period may not be in src yet → extend
+        allk = D.index.union(pd.DatetimeIndex(np.unique(key)))
+        ph = D.hi.where(full).reindex(allk).ffill().shift(1); pl = D.lo.where(full).reindex(allk).ffill().shift(1)
+    PH = pd.Series(ph.reindex(key).to_numpy(), index=idx); PL = pd.Series(pl.reindex(key).to_numpy(), index=idx)
+    c = f["close"]; up, dn = c > PH, c < PL
+    if direction == "long":
+        sig = pd.Series(np.where(_first_per_key(up, key), 1, 0), index=idx)
+    else:
+        ev = _first_per_key(up | dn, key)
+        sig = pd.Series(np.where(ev & up, 1, np.where(ev & dn, -1, 0)), index=idx)
+    if h4 is not None:
+        sig = sig.where(np.sign(sig.to_numpy()) == np.asarray(h4), 0)
+    return sig.astype(int)
+
+
+def turtle_breakout(f: pd.DataFrame, days: int = 20, src: pd.DataFrame | None = None) -> pd.Series:
+    """Turtle System-1 style, buy-only: first M1 close above the highest high of the previous `days` CLOSED UTC daily
+    bars, once per hour. `src`: longer bar history (live H1 bars) for the daily highs; default = f."""
+    src = f if src is None else src
+    d1 = src["high"].resample("1440min", label="left", closed="left").max().dropna()
+    hi = d1.rolling(days).max()
+    hi.index = hi.index + pd.Timedelta(minutes=1440)   # known once the day closed
+    a = pd.merge_asof(pd.DataFrame(index=f.index + pd.Timedelta(minutes=1)), hi.rename("hi").to_frame(),
+                      left_index=True, right_index=True, direction="backward")["hi"].set_axis(f.index)
+    c = f["close"]
+    s = pd.Series(np.where((c > a) & (c.shift(1) <= a.shift(1)), 1, 0), index=f.index)
+    hour = pd.Series(f.index.floor("60min"), index=f.index)
+    keep = ~(hour.where(s != 0).duplicated()) | (s == 0)
+    return s.where(keep, 0).astype(int)
+
+
+def compute_signals(f: pd.DataFrame, cfg, events: pd.DatetimeIndex | None = None,
+                    htf: pd.DataFrame | None = None) -> pd.DataFrame:
+    """`htf`: optional longer H1 bar history (live) for daily/weekly levels; backtests derive them from f."""
     out = pd.DataFrame(index=f.index)
     out["bias"] = m15_bias(f, cfg)
     lv = key_levels(f, out["bias"], cfg)
@@ -230,11 +287,27 @@ def compute_signals(f: pd.DataFrame, cfg, events: pd.DatetimeIndex | None = None
         for lb in (getattr(cfg.strategy, "turbo_lookbacks", None) or [24]):   # ⚡ Hyper Perfect: 12 + 24 + 48 h
             z = turbo_signal(f, lookback_h=int(lb), direction=d)
             sig = z if sig is None else sig.where(sig != 0, z)
+        reg = None
         if str(getattr(cfg.strategy, "turbo_regime", "") or "").lower() == "h4":
             # 4-hour bull/bear identifier (EMA20 vs EMA50 on closed H4 bars): buys only in a bullish H4 market,
             # sells (if enabled) only in a bearish one. Live passes the value in column h4_regime (from H1 history).
             reg = f["h4_regime"].to_numpy() if "h4_regime" in f else closed_trend(f, 240, 20, 50)
             sig = sig.where(((sig > 0) & (reg > 0)) | ((sig < 0) & (reg < 0)), 0)
+        extras = [str(x).lower() for x in (getattr(cfg.strategy, "turbo_extras", None) or [])]
+        if extras:  # 🎯🔥 Hyper Max add-ons (agent research 2019–2026), merged after the hourly breakouts
+            src = htf if htf is not None and len(htf) else None   # live: longer H1 history for daily / weekly levels
+            if reg is None:
+                reg = closed_trend(f, 240, 20, 50)
+            for x in extras:
+                if x == "turtle20":
+                    z = turtle_breakout(f, 20, src)
+                elif x == "prevday":
+                    z = prev_level_break(f, "D", "both", h4=reg)
+                elif x == "prevweek":
+                    z = prev_level_break(f, "W", "long", src=src)
+                else:
+                    continue
+                sig = sig.where(sig != 0, z)
         out["rule_signal"] = sig
     elif mode == "basket":
         out["rule_signal"] = basket_signal(f, cfg)

@@ -419,9 +419,13 @@ class Runner:
             self.last_tick_log = ticks.index[-1]
         micro = tick_microstructure(ticks)
         f = build_features(m1, cfg, corr, micro, self.events)
-        if str(getattr(cfg.strategy, "turbo_regime", "") or "").lower() == "h4" and self._turbo_mode():
-            f["h4_regime"] = self._h4_regime(f)
-        sig = compute_signals(f, cfg, self.events)
+        if self._turbo_mode() and (str(getattr(cfg.strategy, "turbo_regime", "") or "").lower() == "h4"
+                                   or getattr(cfg.strategy, "turbo_extras", None)):
+            h1 = self.conn.rates_latest(self.gold, "H1", 800)   # ~33 days: H4 trend, 20-day and last-week highs
+            f["h4_regime"] = self._h4_regime(f, h1)
+        else:
+            h1 = None
+        sig = compute_signals(f, cfg, self.events, htf=h1)
         row, s = f.iloc[-1], sig.iloc[-1]
         self.last_feat = row
         p_up = float(self.model.predict_proba(f.iloc[[-1]]).iloc[0])
@@ -546,10 +550,10 @@ class Runner:
     def _turbo_mode(self) -> bool:
         return str(getattr(self.cfg.strategy, "mode", "scalp")).lower() == "turbo"
 
-    def _h4_regime(self, f: pd.DataFrame):
+    def _h4_regime(self, f: pd.DataFrame, h1: pd.DataFrame | None = None):
         """H4 EMA20/50 trend from ~800 closed H1 bars (more history than the M1 window), aligned to f."""
         from strategy import closed_trend
-        h1 = self.conn.rates_latest(self.gold, "H1", 800)
+        h1 = self.conn.rates_latest(self.gold, "H1", 800) if h1 is None else h1
         close = h1["close"] if not h1.empty else None
         return closed_trend(f, 240, 20, 50, close=close)
 

@@ -168,6 +168,13 @@ STYLES["hyperperfect"] = {"strategy": {"mode": "turbo", "turbo_lookbacks": [12, 
 # €200: +167 % / +921 % / +705 % (dd −71 / −34 / −77 %); €1,000: +79 % / +507 % / +96 % (dd −67 / −27 / −34 %).
 STYLES["hyperh4"] = {"strategy": {"mode": "turbo", "turbo_lookbacks": [12, 24, 48], "turbo_regime": "h4"},
                      "risk": {"max_concurrent": 3, "max_daily_trades": 100, "conf_sizing": {"enabled": False}}}
+# 🎯🔥 Hyper Max: Hyper + H4 plus three add-ons found by the strategy agents (Nov 2026): Turtle 20-day-high breakout (buy),
+# previous-day high/low breakout in the H4 direction (buy AND sell), previous-week-high breakout (buy). Up to 3 trades,
+# ~1.6 a day. Backtest 1 %: €200 +202 / +1,114 / +745 % (dd −60 / −33 / −50 %); €1,000 +176 / +591 / +140 %
+# (dd −72 / −29 / −32 %) — beat Hyper + H4 in all 6 period × size cells.
+STYLES["hypermax"] = {"strategy": {"mode": "turbo", "turbo_lookbacks": [12, 24, 48], "turbo_regime": "h4",
+                                   "turbo_extras": ["turtle20", "prevday", "prevweek"]},
+                      "risk": {"max_concurrent": 3, "max_daily_trades": 100, "conf_sizing": {"enabled": False}}}
 STYLES["both"] = {"strategy": {"mode": "turbo", "turbo_direction": "both"}}
 BASKET_DEFAULT = {"candles_tf": "m5", "candles": 5, "follow": True, "step_atr": 0.75, "max_entries": 2, "tp_atr": 1.0,
                   "sl_atr": 6.0, "hold_minutes": 240, "equity_per_001": 50}
@@ -220,6 +227,8 @@ def _style() -> str:
     st = load_config(APP / "config.yaml").strategy
     if str(getattr(st, "mode", "scalp")) == "turbo":
         if len(getattr(st, "turbo_lookbacks", None) or [24]) > 1:
+            if getattr(st, "turbo_extras", None):
+                return "hypermax"
             return "hyperh4" if str(getattr(st, "turbo_regime", "") or "") == "h4" else "hyperperfect"
         return "both" if str(getattr(st, "turbo_direction", "long")) == "both" else "turbo"
     if str(getattr(st, "mode", "scalp")) == "basket":
@@ -383,6 +392,7 @@ def action(name: str, body: dict) -> str:
                "turbo": "🎯 Perfect: the best backtested strategy (hourly trend breakouts, 1 % risk). Use €100+.",
                "perfect": "🎯 Perfect: the best backtested strategy (hourly trend breakouts, 1 % risk). Use €100+.",
                "extreme": "☠️ Extreme: ~85 trades a day, buys AND sells with the last 2 candles. Lost money in every backtest period.",
+               "hypermax": "🎯🔥 Hyper Max: Hyper + H4 plus 20-day, previous-day and previous-week breakouts (~1.6 trades a day). Best backtest of all styles.",
                "hyperh4": "🎯🐂 Hyper Perfect + H4 trend: 12/24/48 h breakouts, only while the 4-hour chart is bullish. Profitable in every backtest period at €200 and €1,000.",
                "hyperperfect": "🎯⚡ Hyper Perfect: breakouts on 12/24/48 h at once, up to 3 trades (~2 a day). Profitable in every backtest period from €200, with big swings.",
                "both": "🎯⇅ Perfect + Sell: hourly breakouts up AND down (buys in uptrends, sells in downtrends). Use €500+.",

@@ -3,6 +3,53 @@
 A self-learning gold scalper with a one-click dashboard. It trades XAUUSD on your PU Prime MT5 demo, runs in
 the background, restarts at every Windows logon and retrains itself every weekend on everything it has collected.
 
+## v2.15 — 🎯🔥 Hyper Max, new dashboard, and 1,000+ more strategy tests
+
+**How the research was done:** four agents worked in parallel.
+- One read what gold day traders and quant researchers report online (28 strategies, with sources).
+- Three backtested whole strategy families on the same engine (real Standard costs, 2019–2026, €200 and €1,000,
+  three periods):
+  - **Session / range:** Asian-range and London/NY opening-range breakouts, previous day/week high/low, London-fix
+    and time-of-day drift, the "Asian reopen drift", turn-of-month.
+  - **Pullback / mean reversion:** RSI(2), Bollinger, EMA, VWAP, Fibonacci, stochastic, buy-the-down-day.
+    **Nothing passed.**
+  - **Trend indicators:** Supertrend, Keltner, Bollinger squeeze, MACD/EMA crosses, Turtle 20/55, ADX, Ichimoku,
+    Heikin-Ashi, NR7, inside bars, momentum, and 200-day / 12-month filters.
+
+**What came out:** two add-ons improved 🎯🐂 Hyper + H4. Together they make **🎯🔥 Hyper Max**, which is
+Hyper + H4 plus:
+- **Turtle 20-day breakout:** buy the first close above the highest high of the last 20 completed days.
+- **Previous-day breakout in the 4-hour direction:** buy above yesterday's high in an H4 uptrend, sell below
+  yesterday's low in an H4 downtrend. One per day.
+- **Previous-week-high breakout:** buy. One per week.
+
+| 1 % risk (max drawdown) | 2019 – 23 | 2024 – mid-25 | Aug 2025 – Nov 2026 |
+|---|---|---|---|
+| €200 🎯🔥 **Hyper Max** | **+202 %** (−60 %) | **+1,114 %** (−33 %) | **+745 %** (−50 %) |
+| €200 🎯🐂 Hyper + H4 | +175 % (−69 %) | +933 % (−33 %) | +736 % (−40 %) |
+| €1,000 🎯🔥 **Hyper Max** | **+176 %** (−72 %) | **+591 %** (−29 %) | **+140 %** (−32 %) |
+| €1,000 🎯🐂 Hyper + H4 | +97 % (−67 %) | +524 % (−27 %) | +96 % (−35 %) |
+
+- **Activity:** about 1.6 trades a day, up from 1.2.
+- **Did not survive costs:**
+  - opening-range breakouts
+  - every pullback / mean-reversion rule
+  - Supertrend / MACD / ADX / Ichimoku signals
+  - time-of-day and day-of-week drifts (real, but smaller than the spread)
+  - turn-of-month
+- **Live check:** the live bot's Hyper Max signals matched the backtest signals at 300 of 300 checked moments.
+- **Honest caveats:**
+  - About 30 combinations were tried, so some of the gain is probably luck in selection.
+  - With 2 pips of slippage instead of 0.5, 2019–23 turns flat or negative.
+  - Multi-day trades pay swap, which is not modelled.
+
+**Dashboard:**
+- **Look:** a new design with glass cards, a live pulse and a spinning ring while trading.
+- **Style picker:** grouped into *Profitable in backtests / Scalping / Experimental — lost in backtests*.
+- **P&L chart:** gradient fill, zero line and hover tooltips.
+- **Tables:** BUY/SELL chips.
+- **Phones:** no sideways scrolling.
+
 ## v2.14 — 🎯🐂 Hyper + H4: bull/bear identifier on the 4-hour chart
 
 **Tested:** 32 combinations.
