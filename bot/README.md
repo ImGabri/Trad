@@ -3,6 +3,61 @@
 A self-learning gold scalper with a one-click dashboard. It trades XAUUSD on your PU Prime MT5 demo, runs in
 the background, restarts at every Windows logon and retrains itself every weekend on everything it has collected.
 
+## v2.12 — 🧠 trade memory: learns from its own wins and losses while trading
+
+**How it learns:** after every closed trade, the bot files the result under its situation: BUY or SELL × session
+(Asia / London / London–NY overlap / New York) × volatility (calm / normal / wild).
+
+- **Losing situations:** once a situation has lost on average over 30 or more trades, the bot skips it.
+- **Re-testing:** every 10th signal in a skipped situation is still taken, so the bot notices if it starts working.
+- **Where it shows:** the dashboard (Market & last signal → Trade memory) shows what it avoids and what works.
+- **Where it is kept:** the memory survives restarts and updates (`data\learning\memory.json`).
+
+**Which styles use it:**
+- **On for 🧺 Basket, ☠️ Extreme and 💀 Hyper.** Hyper starts with the lessons from the 2020–26 backtest.
+- **Off for 🎯 Perfect, because it hurt there.** Breakouts often lose a few times right before a big winner.
+
+Backtest results:
+
+| | 2020–23 | 2024–mid-25 | Aug 2025–Nov 2026 |
+|---|---|---|---|
+| 💀 Hyper without memory | 438 trades/day, −$162/day | 367/day, −$134/day | 282/day, −$85/day |
+| 💀 Hyper **with memory** | **58/day, −$21/day** | **53/day, −$20/day** | **48/day, −$16/day** |
+| 🎯 Perfect (long, 1 %) without memory | +55 % | +204 % | +61 % |
+| 🎯 Perfect with memory (not used) | +29 % | +167 % | +63 % |
+
+**What the memory learned:** in every one of the 24 situations, Hyper lost about $0.13–$0.62 per 0.01-lot trade.
+So the memory trims Hyper down to mostly re-tests, and it loses about 7 × less per day. It still does not turn
+Hyper into a winner.
+
+## v2.11 — bigger lots on surer trades (🎯 Perfect)
+
+- **How it sizes trades:** Perfect now risks **1.5 × your Risk %** when the AI agrees with the breakout and
+  **0.5 ×** when it does not.
+- **Backtest (bot engine, long-only, 1 % base, AI predictions the model never saw in training):**
+
+  | Start | Sizing | 2019 – 23 | 2024 – mid-25 | Aug 2025 – Jul 2026 |
+  |---|---|---|---|---|
+  | €1,000 | flat 1 % | +41 % (dd −46 %) | +153 % | +23 % |
+  | €1,000 | **AI sizing** | **+50 % (dd −28 %)** | **+211 %** | **+72 %** |
+  | €200 | flat 1 % | +64 % | +318 % | +292 % |
+  | €200 | **AI sizing** | +58 % | **+381 %** | +292 % |
+
+  - **Small accounts:** under about €500 most trades are already the minimum 0.01 lot, so sizing changes less.
+- **Fast trades — tested, not used:** I tested the same idea on 💀 Hyper and every-minute AI trades. Even the AI's
+  most confident minutes lost about $0.35 per trade, so bigger lots there only lose faster.
+
+## v2.10 — directional 💀 Hyper
+
+- **What changed:** Hyper now only trades **with the hourly trend**. In an uptrend it buys when a 1-minute candle
+  dips, and in a downtrend it sells when one rises. Up to 3 trades are open at once (about 360 a day). Each trade
+  has a 2 × ATR target, a 0.5 × ATR stop and a 60-minute limit.
+- **Why:** on 20 Nov the old Hyper bought while the hourly trend and the headlines pointed down. The new version
+  would only have sold that night.
+- **Backtest (576 directional variants, 2020–2026):** none made money. The fast ones lose about $0.30–$0.37 per
+  0.01-lot trade (the old Hyper lost $0.41–$0.45). That is roughly −$120 a day, so €200 was still blown in every
+  period. The spread ($0.32 a trade) is bigger than any edge found in 1-minute candles.
+
 ## Start (3 steps)
 
 1. Install **PU Prime MT5**, log in to your **demo** account with **Save password** ticked, and click
@@ -27,6 +82,34 @@ tab: the bot keeps running, stops Windows from going to sleep while it trades, a
 | Other exits | ATR take-profit, ATR stop-loss (always at the broker), trailing stop, time stop, Friday 21:00 UTC flat. |
 | News | Verified 2019–2026 US calendar (NFP, CPI, PPI, FOMC, retail sales, GDP, PCE, JOLTS, ISM) plus a live ForexFactory feed. No entries 15→5 min before an event (stops tightened). One AI "news scalp" in the ±5 min window. Wider stops for 15 min after. |
 | Risk | 0.5 % per trade. Small-account mode trades 0.01 lot when that risks ≤ 10 % (a €50 start). 15 % daily loss halt, max 2 open / 20 trades a day, spread and slippage filters, survival hard stop, no averaging down, demo accounts only. |
+
+## v2.9.1 — 🔄 Reset button
+
+**🔄 Reset daily limits & stops** is in Setup (Telegram: `/reset`).
+- **What it clears:**
+  - It starts a fresh trading day from your current equity, so the daily loss limit and the trade count go back
+    to zero.
+  - It clears the kill switch, the survival stop and the drift pause.
+- **When it applies:** within a second if the bot is running. Open trades are not touched.
+
+## v2.9 — buys AND sells
+
+- **☠️ Extreme and 💀 Hyper now trade with the candles.**
+  - **What changed:** they used to bet against the last candles, so on a falling chart they kept buying.
+  - **Now:** falling candles mean SELL and rising candles mean BUY.
+  - **Backtest:** still no profit. Each 0.01-lot trade loses about $0.42, and €100 ends at about €12 (Extreme) or is
+    gone within a day (Hyper).
+- **🎯⇅ Perfect + Sell** is a new style. It runs the same hourly breakout as Perfect, but it also **sells** the first
+  break below the 24-hour low while the hourly trend is down.
+
+  | Start (1 % risk) | 2019 – 2023 | 2024 – mid-2025 | Aug 2025 – Nov 2026 |
+  |---|---|---|---|
+  | €100 | **blown** (−94 %) | +565 % | +915 % |
+  | €500 | −31 % | +179 % | +191 % |
+  | €1,000 | −29 % | +162 % | +62 % |
+
+  - **How it compares:** it beat buy-only Perfect in 2025–26, but it lost money in the choppier 2019–23 years.
+    🎯 Perfect (buy-only) stays the default.
 
 ## v2.7 — 🎯 Perfect, ☠️ Extreme and 30 more markets
 

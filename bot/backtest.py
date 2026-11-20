@@ -19,7 +19,7 @@ import pandas as pd
 
 from config import commission_per_side
 from strategy import decide_entry
-from risk import RiskState, min_required_equity, position_size, survival_breached
+from risk import RiskState, min_required_equity, position_size, risk_pct_for, survival_breached
 
 
 @dataclass
@@ -133,12 +133,12 @@ def run_backtest(f: pd.DataFrame, sig: pd.DataFrame, cfg, ai_dir: pd.Series | No
             continue
         # ---------- fill pending order at this bar's open
         if pending is not None and stop_reason is None:
-            side, slm, tpm, cf, kind, di = pending
+            side, slm, tpm, cf, kind, di, p_side = pending
             pending = None
             a = atr5[di]
             entry = o[i] + spr[i] + slip if side > 0 else o[i] - slip
             sl_d, tp_d = slm * a, tpm * a
-            lots = position_size(equity_cash, sl_d, cs, rk.risk_per_trade_pct, ins.lot_step, ins.min_lot,
+            lots = position_size(equity_cash, sl_d, cs, risk_pct_for(cfg, p_side), ins.lot_step, ins.min_lot,
                                  ins.max_lot, comm, getattr(rk, "min_lot_max_risk_pct", 0))
             if lots > 0:
                 eq_level = (entry + side * (equity_cash * eq_pct / 100 + 2 * comm * lots) / (lots * cs)
@@ -250,7 +250,8 @@ def run_backtest(f: pd.DataFrame, sig: pd.DataFrame, cfg, ai_dir: pd.Series | No
         ok, _ = risk.can_open(len(positions), side,
                               [(p.side, (c[i] - p.entry) * p.side) for p in positions])
         if ok:
-            pending = (int(side), slm, tpm, float(conf[i]), kind, i)
+            p_side = (conf[i] if adir[i] == side else 1 - conf[i]) if has_ai else None
+            pending = (int(side), slm, tpm, float(conf[i]), kind, i, p_side)
 
     # close anything left at the end
     for p in positions:

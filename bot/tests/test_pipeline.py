@@ -145,3 +145,27 @@ def test_ensure_model_installs_pretrained(tmp_path, monkeypatch):
     assert main.ensure_model() and (tmp_path / "data" / "model" / "m15.txt").exists()
     (tmp_path / "data" / "model" / "model.txt").write_text("mine")
     assert main.ensure_model() and (tmp_path / "data" / "model" / "model.txt").read_text() == "mine"  # never overwrites
+
+
+def test_turbo_both_sells_breakdowns_without_lookahead():
+    import numpy as np, pandas as pd
+    from strategy import turbo_signal
+    idx = pd.date_range("2026-01-05", periods=60 * 24 * 6, freq="1min", tz="UTC")
+    px = 4000 - np.arange(len(idx)) * 0.02 + np.sin(np.arange(len(idx)) / 200) * 3   # steady downtrend
+    f = pd.DataFrame({"open": px, "high": px + 0.3, "low": px - 0.3, "close": px}, index=idx)
+    long_only = turbo_signal(f)
+    both = turbo_signal(f, direction="both")
+    assert (long_only == -1).sum() == 0 and (both == -1).sum() > 0
+    cut = len(idx) // 2   # appending future bars must not change past signals
+    assert turbo_signal(f.iloc[:cut], direction="both").equals(both.iloc[:cut])
+
+
+def test_confidence_sizing_scales_risk_in_perfect_only():
+    from config import load_config
+    from risk import risk_pct_for
+    t = load_config(ROOT / "config.yaml", use_tuned=False, overrides={"strategy": {"mode": "turbo"}})
+    base = t.risk.risk_per_trade_pct
+    assert risk_pct_for(t, 0.56) == base * 1.5 and risk_pct_for(t, 0.44) == base * 0.5
+    assert risk_pct_for(t, None) == base and risk_pct_for(t, float("nan")) == base
+    s = load_config(ROOT / "config.yaml", use_tuned=False, overrides={"strategy": {"mode": "scalp"}})
+    assert risk_pct_for(s, 0.9) == s.risk.risk_per_trade_pct

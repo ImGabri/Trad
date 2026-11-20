@@ -261,13 +261,18 @@ def kill(cfg):
 
 
 def reset():
+    """Clear the kill switch and every safety stop, and start a fresh trading day (daily loss and trade count from
+    zero). A running bot picks it up within a second via data/RESET; a stopped bot starts fresh next time."""
     (DATA / "STOP").unlink(missing_ok=True)
     p = DATA / "state.json"
     if p.exists():
         s = json.loads(p.read_text())
-        s.update(hard_stop=False, drift_pause=False)
+        s.update(hard_stop=False, drift_pause=False, daily_halt=False, trades_today=0)
+        s.pop("day", None)  # next start takes today's equity as the new day start
         p.write_text(json.dumps(s, indent=2))
-    print("Kill switch, survival hard stop and drift pause cleared.")
+    DATA.mkdir(parents=True, exist_ok=True)
+    (DATA / "RESET").write_text("reset")
+    print("Reset done: daily loss limit, trade count, kill switch, survival hard stop and drift pause cleared.")
 
 
 def telegram_setup():

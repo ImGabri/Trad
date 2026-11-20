@@ -25,7 +25,7 @@ from analyst import M15Analyst, chart_snapshot, m15_frame
 from news_local import LocalNewsAgent
 from monitor import Status, Telegram, fmt_entry, fmt_exit
 from news import load_events, refresh_calendar
-from risk import RiskState, min_required_equity, position_size, survival_breached
+from risk import RiskState, min_required_equity, position_size, risk_pct_for, survival_breached
 from strategy import compute_signals, decide_entry
 
 log = logging.getLogger("live")
@@ -45,6 +45,10 @@ class Runner:
         self.model = DirectionModel.load(self.data_dir / "model")
         self.learn_dir = self.data_dir / "learning"
         self.outcome = OutcomeModel.load(self.learn_dir)  # learns from the bot's own trades
+        from memory import TradeMemory
+        lc = getattr(cfg, "learning", None)
+        self.memory = TradeMemory(self.learn_dir / "memory.json", seed=Path(__file__).with_name("assets") / "memory_seed.json") \
+            if getattr(lc, "trade_memory", True) else None  # learns while trading which situations lose / win
         self.analyst = M15Analyst.load(self.data_dir / "model")  # 15-minute chart outlook
         an = getattr(cfg, "analyst", None)
         want_news = an is not None and str(getattr(an, "news_agent", "on")).lower() not in ("off", "false", "0")
@@ -137,6 +141,8 @@ class Runner:
                 if self.stop_file.exists():
                     self.kill("STOP file")
                     return "killed"
+                if (self.data_dir / "RESET").exists():
+                    self._apply_reset()
                 if not self.conn.ensure_connected(on_give_up=self._on_disconnect):
                     raise RuntimeError("MT5 connection lost for 10 minutes")
                 self._poll_telegram()
@@ -173,7 +179,8 @@ class Runner:
                             open=p.price_open, sl=p.sl, tp=p.tp, profit=round(p.profit + p.swap, 2)) for p in pos],
             today=self._today_stats(), last=self.last_decision, outlook=self.outlook,
             news=dict(self.news.latest or {}, enabled=True, track=self.news_track) if self.news else {"enabled": False}, model=self.model.meta.get("trained_at", ""),
-            hard_stop=self.risk.hard_stop, daily_halt=self.risk.daily_halt, drift_pause=self.risk.drift_pause)
+            hard_stop=self.risk.hard_stop, daily_halt=self.risk.daily_halt, drift_pause=self.risk.drift_pause,
+            memory=self.memory.summary(self._fast_style()) if self.memory is not None and self._basket_mode() else None)
 
     def _today_stats(self) -> dict:
         day = datetime.now(timezone.utc).date().isoformat()
@@ -211,6 +218,21 @@ class Runner:
         self.tg.send(msg, block=True)
         self.status.update(state="killed", detail=why)
 
+    def _apply_reset(self):
+        """Dashboard "Reset daily limits": a fresh trading day from now (loss counted from current equity), trade
+        count 0, daily-loss halt / survival stop / drift pause / Telegram pause cleared. Open trades are untouched."""
+        (self.data_dir / "RESET").unlink(missing_ok=True)
+        acc = mt5.account_info()
+        eq = float(acc.equity) if acc else self.risk.day_start_equity
+        self.risk.day = datetime.now(timezone.utc).date()
+        self.risk.day_start_equity, self.risk.trades_today = eq, 0
+        self.risk.daily_halt = self.risk.hard_stop = self.risk.drift_pause = False
+        self.paused = False
+        self.drift.results.clear()
+        self._save_state()
+        log.info("reset: daily counters and safety stops cleared at equity %.2f", eq)
+        self.tg.send(f"🔄 Reset: new day started at equity {eq:.2f}, all safety stops cleared.")
+
     def _poll_telegram(self):
         if not self.tg.enabled or time.time() - self.last_tg_poll < 5:
             return
@@ -221,6 +243,8 @@ class Runner:
             elif cmd == "/pause":
                 self.paused = True
                 self.tg.send("⏸ New entries paused.")
+            elif cmd == "/reset":
+                self._apply_reset()
             elif cmd == "/resume":
                 self.paused, self.risk.drift_pause = False, False
                 self.tg.send("▶️ Entries resumed.")
@@ -343,6 +367,8 @@ class Runner:
             self._set_meta(t, None)
             self.tg.send(fmt_exit(dict(ticket=t, reason=reason, pnl=pnl, hold_min=hold)))
             log.info("closed %s %s pnl=%.2f", t, reason, pnl)
+            if self.memory is not None and m.get("mem"):  # learn from this trade's result in its situation
+                self.memory.record(m["mem"], pnl / self.acct_usd / max(float(m.get("lots", 0.01)) / 0.01, 1e-9))
             self.outcome.update_with_live(self.store, self.learn_dir / "sim_trades.csv")  # learn from this trade
             if self.outcome.pipe is not None:
                 self.outcome.save(self.learn_dir)
@@ -464,7 +490,8 @@ class Runner:
             return
         a = float(row["m5_atr"])
         sl_d, tp_d = slm * a, tpm * a
-        lots = position_size(equity / self.acct_usd, sl_d, self.info.trade_contract_size, cfg.risk.risk_per_trade_pct,
+        rpct = risk_pct_for(cfg, (p_up if side > 0 else 1 - p_up) if self.model is not None else None)
+        lots = position_size(equity / self.acct_usd, sl_d, self.info.trade_contract_size, rpct,
                              self.info.volume_step, self.info.volume_min, min(self.info.volume_max, cfg.instrument.max_lot),
                              commission_per_side(cfg), getattr(cfg.risk, "min_lot_max_risk_pct", 0))
         if lots <= 0:
@@ -514,6 +541,22 @@ class Runner:
     def _basket_mode(self) -> bool:
         return self.mode == "demo" and str(getattr(self.cfg.strategy, "mode", "scalp")).lower() == "basket"
 
+    def _fast_style(self) -> str:
+        b = self.cfg.basket
+        if getattr(b, "independent", False):
+            return "hyper"
+        return "extreme" if str(b.candles_tf) == "m1" and int(b.candles) <= 2 else "basket"
+
+    def _memory_gate(self, row, side: int, bar_time) -> tuple[str | None, bool, str]:
+        """(situation key, allowed, reason) from the trade memory."""
+        if self.memory is None or side == 0:
+            return None, True, ""
+        from memory import situation
+        key = situation(self._fast_style(), side, int(pd.Timestamp(bar_time).hour), float(row["m5_atr"]),
+                        float(row.get("m5_atr_typ", float("nan"))))
+        ok, why = self.memory.check(key)
+        return key, ok, why
+
     def _basket_step(self, row, s, equity: float, positions: list, bar_time, p_up: float, conf: float):
         """Open a basket in the direction of the last N candles; add a leg every step×ATR against the last entry
         (up to max_entries); every leg shares the basket stop (from the first entry) and the basket target
@@ -543,11 +586,13 @@ class Runner:
                 decision = f"hyper: {len(positions)}/{max_open} open (full)"
             elif not acc or acc.margin_free < 1.5 * margin:
                 decision = "hyper: not enough free margin"
+            elif not (mg := self._memory_gate(row, side, bar_time))[1]:
+                decision = mg[2]
             else:
                 sl_d, tp_d = float(b.sl_atr) * a, float(b.tp_atr) * a
                 fill = ex.open_market(self.gold, side, lots, sl_d, tp_d, self.dev_points, "xau-v2 hyper")
                 if fill.ok:
-                    self._record_leg(fill, side, lots, fill.price - side * sl_d, fill.price + side * tp_d, a, conf, s)
+                    self._record_leg(fill, side, lots, fill.price - side * sl_d, fill.price + side * tp_d, a, conf, s, mg[0])
                     decision = f"hyper: opened {'BUY' if side > 0 else 'SELL'} {lots} ({len(positions) + 1}/{max_open})"
                 else:
                     decision = f"hyper: MT5 rejected ({fill.retcode})"
@@ -568,14 +613,16 @@ class Runner:
             elif self.paused or self.risk.hard_stop or self.risk.daily_halt or \
                     self.risk.trades_today >= cfg.risk.max_daily_trades:
                 decision = "basket: paused by a safety rule"
+            elif not (mg := self._memory_gate(row, side, bar_time))[1]:
+                decision = mg[2]
             else:
                 lots = round(self.info.volume_min * max(1, int(equity // float(b.equity_per_001))), 2)
                 sl_d, tp_d = float(b.sl_atr) * a, float(b.tp_atr) * a
                 fill = ex.open_market(self.gold, side, lots, sl_d, tp_d, self.dev_points, "xau-v2 basket 1")
                 if fill.ok:
                     self.state["basket"] = dict(side=side, first=fill.price, last=fill.price, n=1, open_ts=time.time(),
-                                                sl=fill.price - side * sl_d, lots=lots)
-                    self._record_leg(fill, side, lots, fill.price - side * sl_d, fill.price + side * tp_d, a, conf, s)
+                                                sl=fill.price - side * sl_d, lots=lots, mem=mg[0])
+                    self._record_leg(fill, side, lots, fill.price - side * sl_d, fill.price + side * tp_d, a, conf, s, mg[0])
                     decision = f"basket: opened {'BUY' if side > 0 else 'SELL'} {lots}"
                     self.tg.send(f"🧺 Basket {'BUY' if side > 0 else 'SELL'} {lots} @ {fill.price:.2f} "
                                  f"(last {b.candles} {b.candles_tf.upper()} candles)")
@@ -607,7 +654,7 @@ class Runner:
                     tp = avg + side * float(b.tp_atr) * a
                     for p in legs:
                         ex.modify_tp(p, tp)
-                    self._record_leg(fill, side, st["lots"], st["sl"], tp, a, conf, s)
+                    self._record_leg(fill, side, st["lots"], st["sl"], tp, a, conf, s, st.get("mem"))
                     decision = f"basket: added leg {st['n']}, new target {tp:.2f}"
                     self.tg.send(f"🧺 Basket leg {st['n']} @ {fill.price:.2f}, target {tp:.2f}, stop {st['sl']:.2f}")
         self.last_decision = dict(time=bar_time.strftime("%Y-%m-%d %H:%M"), close=round(float(row["close"]), 2),
@@ -615,11 +662,12 @@ class Runner:
                                   session=str(s["session"]), news=str(s["news_phase"]), decision=decision)
         log.info("bar %s %s", bar_time.strftime("%H:%M"), decision)
 
-    def _record_leg(self, fill, side, lots, sl, tp, atr_v, conf, s):
+    def _record_leg(self, fill, side, lots, sl, tp, atr_v, conf, s, mem: str | None = None):
         self.risk.trades_today += 1
         tick = mt5.symbol_info_tick(self.gold)
         self._set_meta(fill.ticket, dict(atr=atr_v, open_ts=time.time(), best=fill.price, side=side, kind="basket",
-                                         conf=conf, tp=tp, sl=sl, slip=(fill.price - fill.requested) * side))
+                                         conf=conf, tp=tp, sl=sl, slip=(fill.price - fill.requested) * side,
+                                         lots=lots, mem=mem))
         self.store.record_trade(ticket=fill.ticket, symbol=self.gold, side="BUY" if side > 0 else "SELL", lots=lots,
                                 open_time=datetime.now(timezone.utc).isoformat(), open_price=fill.price, sl=sl, tp=tp,
                                 spread_at_entry=(tick.ask - tick.bid) if tick else None,

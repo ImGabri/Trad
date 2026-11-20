@@ -56,3 +56,19 @@ def test_cost_model_learns_spread_profile_and_slippage(tmp_path):
     hw = pd.DatetimeIndex(["2026-11-02 22:30", "2026-11-02 10:00"], tz="UTC")
     s = c.spread_for(hw, 0.32)
     assert abs(s[0] - 0.80) < 1e-9 and abs(s[1] - 0.32) < 1e-9
+
+
+def test_trade_memory_learns_to_skip_losing_situations(tmp_path):
+    from memory import TradeMemory, situation
+    m = TradeMemory(tmp_path / "memory.json", min_n=10, k=5, explore=4)
+    bad = situation("hyper", 1, 3, 2.0, 1.0)      # BUY · asia · wild
+    good = situation("hyper", -1, 14, 1.0, 1.0)   # SELL · overlap · normal
+    assert bad == "hyper|BUY|asia|wild" and good == "hyper|SELL|overlap|normal"
+    for _ in range(12):
+        m.record(bad, -0.5)
+        m.record(good, +0.4)
+    looks = [m.check(bad)[0] for _ in range(8)]
+    assert looks.count(True) == 2                 # blocked, but re-tested every 4th time
+    assert m.check(good)[0]
+    m2 = TradeMemory(tmp_path / "memory.json", min_n=10, k=5)   # survives a restart
+    assert m2.b[bad]["n"] == 12 and m2.summary("hyper")["blocked"] == 1

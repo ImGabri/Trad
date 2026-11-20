@@ -148,26 +148,33 @@ def news_phase(idx: pd.DatetimeIndex, events: pd.DatetimeIndex | None, cfg) -> p
     return pd.DataFrame({"news_phase": phase, "event_id": ev_id}, index=idx)
 
 
-def turbo_signal(f: pd.DataFrame, lookback_h: int = 24, ema_fast: int = 20, ema_slow: int = 50) -> pd.Series:
+def turbo_signal(f: pd.DataFrame, lookback_h: int = 24, ema_fast: int = 20, ema_slow: int = 50,
+                 direction: str = "long") -> pd.Series:
     """🚀 Turbo: buy the first M1 close above the highest high of the last 24 CLOSED H1 bars, only while the closed-H1
-    EMA20 > EMA50 trend is up; at most one signal per clock hour. Long-only (research: shorts lost in 2019–2025).
+    EMA20 > EMA50 trend is up; at most one signal per clock hour. `direction="both"` also SELLS the first close below
+    the lowest low of the last 24 H1 bars while EMA20 < EMA50 (research: better in 2024–26, blew €100 in 2019–23).
     Decided at the M1 close (no look-ahead: H1 values join on H1 close time)."""
     idx = f.index
     g = f[["high", "low", "close"]].resample("60min", label="left", closed="left")
-    h1 = pd.DataFrame({"high": g["high"].max(), "close": g["close"].last()}).dropna()
+    h1 = pd.DataFrame({"high": g["high"].max(), "low": g["low"].min(), "close": g["close"].last()}).dropna()
     ef = h1.close.ewm(span=ema_fast, adjust=False, min_periods=ema_fast).mean()
     es = h1.close.ewm(span=ema_slow, adjust=False, min_periods=ema_slow).mean()
-    x = pd.DataFrame({"up": np.sign(ef - es), "hi": h1.high.rolling(lookback_h).max()})
+    x = pd.DataFrame({"up": np.sign(ef - es), "hi": h1.high.rolling(lookback_h).max(), "lo": h1.low.rolling(lookback_h).min()})
     x.index = x.index + pd.Timedelta(minutes=60)
     a = pd.merge_asof(pd.DataFrame(index=idx + pd.Timedelta(minutes=1)), x, left_index=True, right_index=True,
                       direction="backward")
     a.index = idx
     above = (f["close"] > a["hi"]).astype(int)
     first = (above == 1) & (above.shift(1, fill_value=0) == 0) & (a["up"] > 0)
-    hours = pd.Series(idx.floor("60min"), index=idx)[first]
-    keep = hours.index[~hours.duplicated()]          # at most one entry per clock hour
     sig = pd.Series(0, index=idx, dtype=int)
-    sig.loc[keep] = 1
+    sig[first] = 1
+    if str(direction).lower() == "both":
+        below = (f["close"] < a["lo"]).astype(int)
+        first_s = (below == 1) & (below.shift(1, fill_value=0) == 0) & (a["up"] < 0)
+        sig[first_s & ~first] = -1
+    hours = pd.Series(idx.floor("60min"), index=idx)[sig != 0]
+    drop = hours.index[hours.duplicated()]            # at most one entry per clock hour
+    sig.loc[drop] = 0
     return sig
 
 
@@ -189,7 +196,22 @@ def basket_signal(f: pd.DataFrame, cfg) -> pd.Series:
         al = pd.merge_asof(pd.DataFrame(index=idx + pd.Timedelta(minutes=1)), s5.rename("v").to_frame(),
                            left_index=True, right_index=True, direction="backward")["v"].fillna(0).to_numpy()
         s = pd.Series(np.where((idx.minute % 5) == 4, al, 0), index=idx)
+    tr = str(getattr(b, "trend", "") or "").lower()
+    if tr in ("m15", "h1"):  # directional: only trade WITH the closed-bar trend
+        t = closed_trend(f, 15 if tr == "m15" else 60, *((50, 200) if tr == "m15" else (20, 50)))
+        want = -t if str(getattr(b, "entry", "follow")).lower() == "dip" else t   # dip: candle against the trend
+        return pd.Series(np.where((s.to_numpy() == want) & (t != 0), t, 0), index=idx).astype(int)
     return (s * (1 if getattr(b, "follow", True) else -1)).astype(int)
+
+
+def closed_trend(f: pd.DataFrame, tf_min: int, fast: int, slow: int) -> np.ndarray:
+    """+1 / −1 / 0 = EMA(fast) vs EMA(slow) on CLOSED tf_min-minute bars, aligned to each M1 bar's close."""
+    c = f["close"].resample(f"{tf_min}min", label="left", closed="left").last().dropna()
+    t = np.sign(c.ewm(span=fast, adjust=False, min_periods=slow).mean() - c.ewm(span=slow, adjust=False, min_periods=slow).mean())
+    t.index = t.index + pd.Timedelta(minutes=tf_min)
+    a = pd.merge_asof(pd.DataFrame(index=f.index + pd.Timedelta(minutes=1)), t.rename("t").to_frame(),
+                      left_index=True, right_index=True, direction="backward")["t"]
+    return a.fillna(0).to_numpy()
 
 
 def compute_signals(f: pd.DataFrame, cfg, events: pd.DatetimeIndex | None = None) -> pd.DataFrame:
@@ -202,7 +224,7 @@ def compute_signals(f: pd.DataFrame, cfg, events: pd.DatetimeIndex | None = None
                                   out["bias"], 0)
     mode = str(getattr(cfg.strategy, "mode", "scalp")).lower()
     if mode == "turbo":
-        out["rule_signal"] = turbo_signal(f)
+        out["rule_signal"] = turbo_signal(f, direction=str(getattr(cfg.strategy, "turbo_direction", "long")))
     elif mode == "basket":
         out["rule_signal"] = basket_signal(f, cfg)
     out = out.join(session_state(f.index, cfg)).join(news_phase(f.index, events, cfg))

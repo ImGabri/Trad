@@ -1,0 +1,173 @@
+{
+ "updated": "backtest seed (2020-06 \u2192 2026-11, capped at 60 trades each so live trades can change it)",
+ "buckets": {
+  "hyper|SELL|asia|calm": {
+   "n": 60,
+   "sum": -20.6696,
+   "wins": 3,
+   "seen": 0,
+   "last": "backtest 2020-26"
+  },
+  "hyper|SELL|asia|normal": {
+   "n": 60,
+   "sum": -18.8995,
+   "wins": 7,
+   "seen": 0,
+   "last": "backtest 2020-26"
+  },
+  "hyper|SELL|asia|wild": {
+   "n": 60,
+   "sum": -36.8778,
+   "wins": 10,
+   "seen": 0,
+   "last": "backtest 2020-26"
+  },
+  "hyper|SELL|london|calm": {
+   "n": 60,
+   "sum": -19.3164,
+   "wins": 9,
+   "seen": 0,
+   "last": "backtest 2020-26"
+  },
+  "hyper|SELL|london|normal": {
+   "n": 60,
+   "sum": -20.954,
+   "wins": 7,
+   "seen": 0,
+   "last": "backtest 2020-26"
+  },
+  "hyper|SELL|london|wild": {
+   "n": 60,
+   "sum": -18.4015,
+   "wins": 9,
+   "seen": 0,
+   "last": "backtest 2020-26"
+  },
+  "hyper|SELL|overlap|calm": {
+   "n": 60,
+   "sum": -23.7837,
+   "wins": 8,
+   "seen": 0,
+   "last": "backtest 2020-26"
+  },
+  "hyper|SELL|overlap|normal": {
+   "n": 60,
+   "sum": -8.0488,
+   "wins": 10,
+   "seen": 0,
+   "last": "backtest 2020-26"
+  },
+  "hyper|SELL|overlap|wild": {
+   "n": 60,
+   "sum": -21.3063,
+   "wins": 10,
+   "seen": 0,
+   "last": "backtest 2020-26"
+  },
+  "hyper|SELL|newyork|calm": {
+   "n": 60,
+   "sum": -18.2685,
+   "wins": 5,
+   "seen": 0,
+   "last": "backtest 2020-26"
+  },
+  "hyper|SELL|newyork|normal": {
+   "n": 60,
+   "sum": -19.9543,
+   "wins": 8,
+   "seen": 0,
+   "last": "backtest 2020-26"
+  },
+  "hyper|SELL|newyork|wild": {
+   "n": 60,
+   "sum": -21.5604,
+   "wins": 10,
+   "seen": 0,
+   "last": "backtest 2020-26"
+  },
+  "hyper|BUY|asia|calm": {
+   "n": 60,
+   "sum": -21.6548,
+   "wins": 3,
+   "seen": 0,
+   "last": "backtest 2020-26"
+  },
+  "hyper|BUY|asia|normal": {
+   "n": 60,
+   "sum": -24.9075,
+   "wins": 7,
+   "seen": 0,
+   "last": "backtest 2020-26"
+  },
+  "hyper|BUY|asia|wild": {
+   "n": 60,
+   "sum": -12.6744,
+   "wins": 12,
+   "seen": 0,
+   "last": "backtest 2020-26"
+  },
+  "hyper|BUY|london|calm": {
+   "n": 60,
+   "sum": -28.939,
+   "wins": 7,
+   "seen": 0,
+   "last": "backtest 2020-26"
+  },
+  "hyper|BUY|london|normal": {
+   "n": 60,
+   "sum": -24.4225,
+   "wins": 6,
+   "seen": 0,
+   "last": "backtest 2020-26"
+  },
+  "hyper|BUY|london|wild": {
+   "n": 60,
+   "sum": -23.2168,
+   "wins": 8,
+   "seen": 0,
+   "last": "backtest 2020-26"
+  },
+  "hyper|BUY|overlap|calm": {
+   "n": 60,
+   "sum": -19.1232,
+   "wins": 8,
+   "seen": 0,
+   "last": "backtest 2020-26"
+  },
+  "hyper|BUY|overlap|normal": {
+   "n": 60,
+   "sum": -24.5469,
+   "wins": 8,
+   "seen": 0,
+   "last": "backtest 2020-26"
+  },
+  "hyper|BUY|overlap|wild": {
+   "n": 60,
+   "sum": -21.2333,
+   "wins": 10,
+   "seen": 0,
+   "last": "backtest 2020-26"
+  },
+  "hyper|BUY|newyork|calm": {
+   "n": 60,
+   "sum": -18.5458,
+   "wins": 4,
+   "seen": 0,
+   "last": "backtest 2020-26"
+  },
+  "hyper|BUY|newyork|normal": {
+   "n": 60,
+   "sum": -23.5487,
+   "wins": 8,
+   "seen": 0,
+   "last": "backtest 2020-26"
+  },
+  "hyper|BUY|newyork|wild": {
+   "n": 60,
+   "sum": -17.0969,
+   "wins": 11,
+   "seen": 0,
+   "last": "backtest 2020-26"
+  }
+ }
+}

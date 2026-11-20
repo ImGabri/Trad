@@ -146,7 +146,10 @@ turbo:                       # 🚀 Turbo (default) — applied on top of everyt
   strategy: {ai_gate: false, sl_atr: 3.0, tp_atr: 40.0, trail_trigger_atr: 99.0, trail_distance_atr: 99.0,
              time_stop_minutes: 900, equity_tp_pct: 0.0, ai_only_min_conf: 0.0}
   risk: {risk_per_trade_pct: 1.0, min_lot_max_risk_pct: 70, max_concurrent: 1, daily_loss_limit_pct: 30,
-         survival_multiplier: 1.0}
+         survival_multiplier: 1.0,
+         # Confidence sizing: × 1.5 risk when the AI agrees with the breakout (P > 0.5), × 0.5 when it does not.
+         # Backtest (€10k, 1 % base, long): 2019–23 +59 % vs +55 % flat, 2024–25 +277 % vs +204 %, 2025–26 +129 % vs +68 %.
+         conf_sizing: {enabled: true, sure_above: 0.5, sure_mult: 1.5, unsure_mult: 0.5}}
   analyst: {veto_conf: 0.0}
   sessions: {asia_enabled: true}   # breakouts in Asia hours were part of the tested edge
 
@@ -168,6 +171,10 @@ analyst:                     # "what will probably happen next" — see analyst.
   news_agent: on             # free headline analyst (Google News RSS, no API key) — off to disable
   news_interval_min: 15
   news_veto_conf: 0.75       # skip a trade only when headlines strongly point the other way (not backtestable → cautious)
+
+learning:
+  trade_memory: true         # fast styles (basket / extreme / hyper) learn while trading which situations lose and skip them
+                             # (data/learning/memory.json; seeded from the 2020–26 backtest). Off for 🎯 Perfect — it hurt there.
 
 history:
   years: 7                   # training history (broker bars + public OANDA data for older years)

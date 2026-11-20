@@ -83,7 +83,7 @@ def test_live_hyper_opens_independent_trades_up_to_max_open(tmp_path):
         "strategy": {"mode": "basket"}, "sessions": {"asia_enabled": True, "no_entry_windows": []},
         "basket": {"candles_tf": "m1", "candles": 1, "follow": False, "independent": True, "max_open": 4,
                    "tp_atr": 0.25, "sl_atr": 1.0, "hold_minutes": 15, "equity_per_001": 1000},
-        "risk": {"max_daily_trades": 100000}})
+        "risk": {"max_daily_trades": 100000}, "learning": {"trade_memory": False}})
     cfg.broker.server_utc_offset_hours = 2
     DirectionModel.fit(build_features(m1.iloc[:20000], cfg), cfg, rounds=40).save(tmp_path / "data" / "model")
     n = {"i": 0, "peak": 0}
@@ -102,3 +102,83 @@ def test_live_hyper_opens_independent_trades_up_to_max_open(tmp_path):
     legs = list(fake.positions.values())
     if len(legs) > 1:   # independent trades: each has its own stop / target
         assert len({round(p.sl, 2) for p in legs}) > 1
+
+
+def test_reset_clears_daily_halt_and_stops_while_running(tmp_path):
+    m1 = synthetic_m1(days=40, seed=7)
+    fake_mt5.install(m1, start_bar=20000)
+    for name in ("data", "execution", "live"):
+        if name in sys.modules:
+            importlib.reload(sys.modules[name])
+    from config import load_config
+    from features import build_features
+    from ai_model import DirectionModel
+    import live
+    cfg = load_config(ROOT / "config.yaml", use_tuned=False, overrides={"strategy": {"mode": "scalp"}})
+    cfg.broker.server_utc_offset_hours = 2
+    DirectionModel.fit(build_features(m1.iloc[:20000], cfg), cfg, rounds=40).save(tmp_path / "data" / "model")
+    seen = {}
+    def keep():
+        n = seen["i"] = seen.get("i", 0) + 1
+        if n == 3:
+            r.risk.daily_halt = r.risk.hard_stop = r.risk.drift_pause = True
+            r.risk.trades_today = 99
+            (tmp_path / "data" / "RESET").write_text("x")
+        if n == 6:
+            seen["after"] = (r.risk.daily_halt, r.risk.hard_stop, r.risk.drift_pause, r.risk.trades_today)
+        return n < 8
+    r = live.Runner(cfg, tmp_path, "demo", keep)
+    r.events = pd.DatetimeIndex([], tz="UTC"); r.last_cal = 1e18
+    live.time.sleep = lambda s: None
+    r.run()
+    assert seen["after"] == (False, False, False, 0)
+    assert not (tmp_path / "data" / "RESET").exists()
+
+
+def test_directional_hyper_only_trades_with_hourly_trend():
+    from config import load_config
+    from strategy import basket_signal, closed_trend
+    m1 = synthetic_m1(days=20, seed=9)
+    cfg = load_config(ROOT / "config.yaml", use_tuned=False, overrides={"basket": {
+        "candles_tf": "m1", "candles": 1, "trend": "h1", "entry": "dip"}})
+    s = basket_signal(m1, cfg)
+    t = closed_trend(m1, 60, 20, 50)
+    body = np.sign(m1["close"] - m1["open"]).to_numpy()
+    nz = s.to_numpy() != 0
+    assert nz.sum() > 50
+    assert (s.to_numpy()[nz] == t[nz]).all()           # always with the trend …
+    assert (body[nz] == -t[nz]).all()                  # … after a candle against it (the dip)
+    cut = len(m1) // 2
+    assert basket_signal(m1.iloc[:cut], cfg).equals(s.iloc[:cut])   # no look-ahead
+
+
+def test_live_hyper_records_results_in_trade_memory(tmp_path):
+    m1 = synthetic_m1(days=40, seed=6)
+    mod = fake_mt5.install(m1, start_bar=20000)
+    for name in ("data", "execution", "live"):
+        if name in sys.modules:
+            importlib.reload(sys.modules[name])
+    from config import load_config
+    from features import build_features
+    from ai_model import DirectionModel
+    import live, json
+    cfg = load_config(ROOT / "config.yaml", use_tuned=False, overrides={
+        "strategy": {"mode": "basket"}, "sessions": {"asia_enabled": True, "no_entry_windows": []},
+        "basket": {"candles_tf": "m1", "candles": 1, "follow": True, "independent": True, "max_open": 4,
+                   "tp_atr": 0.25, "sl_atr": 1.0, "hold_minutes": 15, "equity_per_001": 1000},
+        "risk": {"max_daily_trades": 100000}})
+    cfg.broker.server_utc_offset_hours = 2
+    DirectionModel.fit(build_features(m1.iloc[:20000], cfg), cfg, rounds=40).save(tmp_path / "data" / "model")
+    n = {"i": 0}
+    def keep():
+        n["i"] += 1
+        return n["i"] < 700
+    r = live.Runner(cfg, tmp_path, "demo", keep)
+    r.events = pd.DatetimeIndex([], tz="UTC"); r.last_cal = 1e18
+    live.time.sleep = lambda s: None
+    r.run()
+    mem = json.loads((tmp_path / "data" / "learning" / "memory.json").read_text())["buckets"]
+    live_n = sum(v["n"] for k, v in mem.items() if v.get("last") != "backtest 2020-26")
+    assert live_n >= 1, "closed trades must be learned"
+    trades = pd.read_sql_query("SELECT * FROM trades", r.store.conn)
+    assert trades.pnl.notna().sum() >= 1
