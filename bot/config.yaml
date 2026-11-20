@@ -172,6 +172,10 @@ analyst:                     # "what will probably happen next" — see analyst.
   news_interval_min: 15
   news_veto_conf: 0.75       # skip a trade only when headlines strongly point the other way (not backtestable → cautious)
 
+learning:
+  trade_memory: true         # fast styles (basket / extreme / hyper) learn while trading which situations lose and skip them
+                             # (data/learning/memory.json; seeded from the 2020–26 backtest). Off for 🎯 Perfect — it hurt there.
+
 history:
   years: 7                   # training history (broker bars + public OANDA data for older years)
   hf_gold: bunqi/OANDA_XAUUSD_Gold          # public Hugging Face datasets (monthly parquet, 1-minute)

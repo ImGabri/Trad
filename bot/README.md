@@ -3,6 +3,33 @@
 A self-learning gold scalper with a one-click dashboard. It trades XAUUSD on your PU Prime MT5 demo, runs in
 the background, restarts at every Windows logon and retrains itself every weekend on everything it has collected.
 
+## v2.12 — 🧠 trade memory: learns from its own wins and losses while trading
+
+**How it learns:** after every closed trade, the bot files the result under its situation: BUY or SELL × session
+(Asia / London / London–NY overlap / New York) × volatility (calm / normal / wild).
+
+- **Losing situations:** once a situation has lost on average over 30 or more trades, the bot skips it.
+- **Re-testing:** every 10th signal in a skipped situation is still taken, so the bot notices if it starts working.
+- **Where it shows:** the dashboard (Market & last signal → Trade memory) shows what it avoids and what works.
+- **Where it is kept:** the memory survives restarts and updates (`data\learning\memory.json`).
+
+**Which styles use it:**
+- **On for 🧺 Basket, ☠️ Extreme and 💀 Hyper.** Hyper starts with the lessons from the 2020–26 backtest.
+- **Off for 🎯 Perfect, because it hurt there.** Breakouts often lose a few times right before a big winner.
+
+Backtest results:
+
+| | 2020–23 | 2024–mid-25 | Aug 2025–Nov 2026 |
+|---|---|---|---|
+| 💀 Hyper without memory | 438 trades/day, −$162/day | 367/day, −$134/day | 282/day, −$85/day |
+| 💀 Hyper **with memory** | **58/day, −$21/day** | **53/day, −$20/day** | **48/day, −$16/day** |
+| 🎯 Perfect (long, 1 %) without memory | +55 % | +204 % | +61 % |
+| 🎯 Perfect with memory (not used) | +29 % | +167 % | +63 % |
+
+**What the memory learned:** in every one of the 24 situations, Hyper lost about $0.13–$0.62 per 0.01-lot trade.
+So the memory trims Hyper down to mostly re-tests, and it loses about 7 × less per day. It still does not turn
+Hyper into a winner.
+
 ## v2.11 — bigger lots on surer trades (🎯 Perfect)
 
 - **How it sizes trades:** Perfect now risks **1.5 × your Risk %** when the AI agrees with the breakout and
