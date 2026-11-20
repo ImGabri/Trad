@@ -26,6 +26,18 @@ def position_size(equity: float, sl_distance: float, contract_size: float, risk_
     return lots
 
 
+def risk_pct_for(cfg, p_side: float | None) -> float:
+    """Confidence sizing (config `risk.conf_sizing`): bigger risk when the AI agrees with the trade
+    (P(side) > sure_above), smaller when it does not — as multiples of risk_per_trade_pct. Backtest on 🎯 Perfect:
+    0.5 % / 1.5 % (× 0.5 / × 1.5 of 1 %) beat flat 1 % in
+    2019–23, 2024–25 and 2025–26. Without an AI reading the base risk_per_trade_pct is used."""
+    base = float(cfg.risk.risk_per_trade_pct)
+    cs = getattr(cfg.risk, "conf_sizing", None)
+    if not cs or not getattr(cs, "enabled", False) or p_side is None or not math.isfinite(p_side):
+        return base
+    return base * (float(cs.sure_mult) if p_side > float(cs.sure_above) else float(cs.unsure_mult))
+
+
 def min_required_equity(price: float, sl_distance: float, contract_size: float, leverage: float,
                         min_lot: float = 0.01, margin_min_lot: float | None = None) -> float:
     """margin for 0.01 lots + SL loss for 0.01 lots (§5 survival rule). Callers pass the SL distance at TYPICAL

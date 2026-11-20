@@ -25,7 +25,7 @@ from analyst import M15Analyst, chart_snapshot, m15_frame
 from news_local import LocalNewsAgent
 from monitor import Status, Telegram, fmt_entry, fmt_exit
 from news import load_events, refresh_calendar
-from risk import RiskState, min_required_equity, position_size, survival_breached
+from risk import RiskState, min_required_equity, position_size, risk_pct_for, survival_breached
 from strategy import compute_signals, decide_entry
 
 log = logging.getLogger("live")
@@ -483,7 +483,8 @@ class Runner:
             return
         a = float(row["m5_atr"])
         sl_d, tp_d = slm * a, tpm * a
-        lots = position_size(equity / self.acct_usd, sl_d, self.info.trade_contract_size, cfg.risk.risk_per_trade_pct,
+        rpct = risk_pct_for(cfg, (p_up if side > 0 else 1 - p_up) if self.model is not None else None)
+        lots = position_size(equity / self.acct_usd, sl_d, self.info.trade_contract_size, rpct,
                              self.info.volume_step, self.info.volume_min, min(self.info.volume_max, cfg.instrument.max_lot),
                              commission_per_side(cfg), getattr(cfg.risk, "min_lot_max_risk_pct", 0))
         if lots <= 0:

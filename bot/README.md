@@ -3,6 +3,23 @@
 A self-learning gold scalper with a one-click dashboard. It trades XAUUSD on your PU Prime MT5 demo, runs in
 the background, restarts at every Windows logon and retrains itself every weekend on everything it has collected.
 
+## v2.11 — bigger lots on surer trades (🎯 Perfect)
+
+- **How it sizes trades:** Perfect now risks **1.5 × your Risk %** when the AI agrees with the breakout and
+  **0.5 ×** when it does not.
+- **Backtest (bot engine, long-only, 1 % base, AI predictions the model never saw in training):**
+
+  | Start | Sizing | 2019 – 23 | 2024 – mid-25 | Aug 2025 – Jul 2026 |
+  |---|---|---|---|---|
+  | €1,000 | flat 1 % | +41 % (dd −46 %) | +153 % | +23 % |
+  | €1,000 | **AI sizing** | **+50 % (dd −28 %)** | **+211 %** | **+72 %** |
+  | €200 | flat 1 % | +64 % | +318 % | +292 % |
+  | €200 | **AI sizing** | +58 % | **+381 %** | +292 % |
+
+  - **Small accounts:** under about €500 most trades are already the minimum 0.01 lot, so sizing changes less.
+- **Fast trades — tested, not used:** I tested the same idea on 💀 Hyper and every-minute AI trades. Even the AI's
+  most confident minutes lost about $0.35 per trade, so bigger lots there only lose faster.
+
 ## v2.10 — directional 💀 Hyper
 
 - **What changed:** Hyper now only trades **with the hourly trend**. In an uptrend it buys when a 1-minute candle
