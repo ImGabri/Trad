@@ -3,6 +3,32 @@
 A self-learning gold scalper with a one-click dashboard. It trades XAUUSD on your PU Prime MT5 demo, runs in
 the background, restarts at every Windows logon and retrains itself every weekend on everything it has collected.
 
+## v2.15.1 — startup diagnostics + backtest of the shipped code
+
+- **Startup screen:** the dashboard now shows each startup step with a timer.
+- **MT5 hang:** the bot gives up after 90 s with a clear message instead of hanging on "Connecting to MT5…".
+- **Crashes:** they are saved, and the dashboard shows the last log lines whenever the background bot isn't
+  running.
+- **Faster startup:** the bot reads the MT5 symbol list once instead of 39 times.
+
+**End-to-end backtest of the code you download:** dashboard style presets → config → the bot's signal code →
+backtest engine, with real Standard costs and the built-in news calendar, 1 % risk. Max drawdown is in brackets.
+
+| Style | Start | 2019 – 23 | 2024 – mid-25 | Aug 2025 – Nov 2026 | Trades/day |
+|---|---|---|---|---|---|
+| 🎯 Perfect | €200 | +64 % (−62) | +318 % (−26) | +265 % (−34) | 0.6 |
+| 🎯 Perfect | €1,000 | +41 % (−46) | +155 % (−12) | +53 % (−18) | |
+| 🎯⚡ Hyper Perfect | €200 | +116 % (−65) | +1,138 % (−53) | +602 % (−83) | 1.7 |
+| 🎯⚡ Hyper Perfect | €1,000 | **−5 %** (−80) | +556 % (−34) | +125 % (−44) | |
+| 🎯🐂 Hyper + H4 | €200 | +175 % (−69) | +933 % (−33) | +736 % (−40) | 1.25 |
+| 🎯🐂 Hyper + H4 | €1,000 | +97 % (−67) | +559 % (−28) | +164 % (−35) | |
+| 🎯🔥 **Hyper Max** | €200 | **+202 %** (−60) | **+1,114 %** (−33) | **+745 %** (−50) | 1.6 |
+| 🎯🔥 **Hyper Max** | €1,000 | **+176 %** (−72) | **+722 %** (−31) | **+167 %** (−38) | |
+
+- **The news calendar matters:** the same code run *without* it lost the whole €200 in 2019–23 with every Hyper
+  style. Its no-trade windows before and after NFP / CPI / FOMC are essential, so keep them on.
+- **Asia session:** turning off Asia-hours trading made every style worse, so it stays on.
+
 ## v2.15 — 🎯🔥 Hyper Max, new dashboard, and 1,000+ more strategy tests
 
 **How the research was done:** four agents worked in parallel.

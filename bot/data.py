@@ -47,8 +47,9 @@ class MT5Connection:
             kwargs["path"] = self.cfg.broker.terminal_path
         if s.mt5_login:
             kwargs.update(login=s.mt5_login, password=s.mt5_password, server=s.mt5_server)
-        if not mt5.initialize(**kwargs):
-            log.error("mt5.initialize failed: %s", mt5.last_error())
+        ok = self._initialize_with_timeout(kwargs, float(getattr(self.cfg.monitoring, "connect_timeout_s", 90)))
+        if not ok:
+            log.error("mt5.initialize failed: %s", self.last_error or mt5.last_error())
             return False
         info = mt5.account_info()
         term = mt5.terminal_info()
@@ -60,6 +61,24 @@ class MT5Connection:
                  info.login, info.server, info.balance, info.leverage)
         self._resolve_offset()
         return True
+
+    last_error = ""
+
+    def _initialize_with_timeout(self, kwargs: dict, timeout_s: float) -> bool:
+        """mt5.initialize can block for ever when the terminal shows a dialog, is updating or is not logged in.
+        Run it in a helper thread and give up after timeout_s with a clear message instead of hanging silently."""
+        import threading
+        box = {}
+        th = threading.Thread(target=lambda: box.setdefault("ok", bool(mt5.initialize(**kwargs))), daemon=True)
+        th.start()
+        th.join(timeout_s)
+        if th.is_alive():
+            self.last_error = (f"MT5 did not answer within {int(timeout_s)} s. Open the PU Prime MT5 window: close any "
+                               "pop-up/update dialog, make sure you are logged in to your demo account, then press STOP "
+                               "and START.")
+            return False
+        self.last_error = "" if box.get("ok") else str(mt5.last_error())
+        return bool(box.get("ok"))
 
     def is_alive(self) -> bool:
         return mt5 is not None and mt5.terminal_info() is not None and mt5.account_info() is not None
@@ -124,10 +143,11 @@ class MT5Connection:
         return (dt_utc + (self.server_offset or timedelta(0))).replace(tzinfo=timezone.utc)
 
     # Symbols ------------------------------------------------------------------------------
-    def resolve_symbol(self, candidates: Iterable[str], suffix: str = "") -> str | None:
+    def resolve_symbol(self, candidates: Iterable[str], suffix: str = "", names: dict | None = None) -> str | None:
         """First candidate present on the server. PU Prime adds account-type suffixes (e.g. XAUUSD.s),
         so each alias is tried with the primary symbol's suffix first, then bare, then any suffix."""
-        names = {s.name.upper(): s.name for s in (mt5.symbols_get() or [])}
+        if names is None:
+            names = {s.name.upper(): s.name for s in (mt5.symbols_get() or [])}
         for c in candidates:
             for name in dict.fromkeys([c + suffix, c]):
                 real = names.get(name.upper())
@@ -143,7 +163,8 @@ class MT5Connection:
         """{market: PU Prime symbol or None} for every market in config `context`."""
         ctx = getattr(cfg, "context", None)
         names = vars(ctx) if ctx is not None else {}
-        return {k: self.resolve_symbol(v.mt5, suffix) for k, v in names.items()}
+        allnames = {s.name.upper(): s.name for s in (mt5.symbols_get() or [])}  # read the symbol list ONCE
+        return {k: self.resolve_symbol(v.mt5, suffix, allnames) for k, v in names.items()}
 
     def resolve_gold(self, wanted: str = "XAUUSD") -> str:
         """Standard 24/5 gold with full trading rights; never the XAUUSD247 contract."""
