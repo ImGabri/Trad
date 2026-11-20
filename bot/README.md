@@ -3,6 +3,106 @@
 A self-learning gold scalper with a one-click dashboard. It trades XAUUSD on your PU Prime MT5 demo, runs in
 the background, restarts at every Windows logon and retrains itself every weekend on everything it has collected.
 
+## v2.15 — 🎯🔥 Hyper Max, new dashboard, and 1,000+ more strategy tests
+
+**How the research was done:** four agents worked in parallel.
+- One read what gold day traders and quant researchers report online (28 strategies, with sources).
+- Three backtested whole strategy families on the same engine (real Standard costs, 2019–2026, €200 and €1,000,
+  three periods):
+  - **Session / range:** Asian-range and London/NY opening-range breakouts, previous day/week high/low, London-fix
+    and time-of-day drift, the "Asian reopen drift", turn-of-month.
+  - **Pullback / mean reversion:** RSI(2), Bollinger, EMA, VWAP, Fibonacci, stochastic, buy-the-down-day.
+    **Nothing passed.**
+  - **Trend indicators:** Supertrend, Keltner, Bollinger squeeze, MACD/EMA crosses, Turtle 20/55, ADX, Ichimoku,
+    Heikin-Ashi, NR7, inside bars, momentum, and 200-day / 12-month filters.
+
+**What came out:** two add-ons improved 🎯🐂 Hyper + H4. Together they make **🎯🔥 Hyper Max**, which is
+Hyper + H4 plus:
+- **Turtle 20-day breakout:** buy the first close above the highest high of the last 20 completed days.
+- **Previous-day breakout in the 4-hour direction:** buy above yesterday's high in an H4 uptrend, sell below
+  yesterday's low in an H4 downtrend. One per day.
+- **Previous-week-high breakout:** buy. One per week.
+
+| 1 % risk (max drawdown) | 2019 – 23 | 2024 – mid-25 | Aug 2025 – Nov 2026 |
+|---|---|---|---|
+| €200 🎯🔥 **Hyper Max** | **+202 %** (−60 %) | **+1,114 %** (−33 %) | **+745 %** (−50 %) |
+| €200 🎯🐂 Hyper + H4 | +175 % (−69 %) | +933 % (−33 %) | +736 % (−40 %) |
+| €1,000 🎯🔥 **Hyper Max** | **+176 %** (−72 %) | **+591 %** (−29 %) | **+140 %** (−32 %) |
+| €1,000 🎯🐂 Hyper + H4 | +97 % (−67 %) | +524 % (−27 %) | +96 % (−35 %) |
+
+- **Activity:** about 1.6 trades a day, up from 1.2.
+- **Did not survive costs:**
+  - opening-range breakouts
+  - every pullback / mean-reversion rule
+  - Supertrend / MACD / ADX / Ichimoku signals
+  - time-of-day and day-of-week drifts (real, but smaller than the spread)
+  - turn-of-month
+- **Live check:** the live bot's Hyper Max signals matched the backtest signals at 300 of 300 checked moments.
+- **Honest caveats:**
+  - About 30 combinations were tried, so some of the gain is probably luck in selection.
+  - With 2 pips of slippage instead of 0.5, 2019–23 turns flat or negative.
+  - Multi-day trades pay swap, which is not modelled.
+
+**Dashboard:**
+- **Look:** a new design with glass cards, a live pulse and a spinning ring while trading.
+- **Style picker:** grouped into *Profitable in backtests / Scalping / Experimental — lost in backtests*.
+- **P&L chart:** gradient fill, zero line and hover tooltips.
+- **Tables:** BUY/SELL chips.
+- **Phones:** no sideways scrolling.
+
+## v2.14 — 🎯🐂 Hyper + H4: bull/bear identifier on the 4-hour chart
+
+**Tested:** 32 combinations.
+- **Trend identifiers:** H4 EMA 20/50, H4 EMA 50/200, D1 EMA 20/50, or none.
+- **Directions:** buy only, or buy and sell.
+- **Chop filter:** H4 ADX > 20, on or off.
+- **Open trades:** 1 or 3.
+
+Each combination ran at €200 and €1,000 in three periods, on top of Hyper Perfect's 12/24/48-hour breakouts.
+
+**Winner: H4 EMA 20/50, buy only, up to 3 trades.** It buys breakouts only while the 4-hour chart is bullish, and
+it sits out bearish 4-hour markets.
+
+| 1 % risk | 2019 – 23 | 2024 – mid-25 | Aug 2025 – Nov 2026 |
+|---|---|---|---|
+| €200 🎯🐂 Hyper + H4 | **+167 %** (dd −71 %) | +921 % (dd −34 %) | **+705 %** (dd −77 %) |
+| €200 🎯⚡ Hyper Perfect | +116 % (dd −65 %) | +1,138 % (dd −53 %) | +602 % (dd −83 %) |
+| €1,000 🎯🐂 Hyper + H4 | **+79 %** (dd −67 %) | +507 % (dd −27 %) | **+96 %** (dd −34 %) |
+| €1,000 🎯⚡ Hyper Perfect | −18 % (dd −82 %) | +522 % | +64 % (dd −50 %) |
+
+- **Trade frequency:** about 1.2 trades a day.
+- **At both sizes:** it was the only fast variant profitable in every period at €200 *and* €1,000.
+- **Selling in bear markets:** still **lost** in 2019–23, even with the H4 filter (€200 was blown). So the
+  identifier is used to *stop buying* in bear markets, not to sell.
+- **Also tested, not added (144 more backtests):**
+  - **Sells:** they lost with every bull/bear identifier (H4, M15 20/50, M15 50/200, H4 + M15). Sell-only averaged
+    −0.07 to −0.14 R per trade in 2019–23 and −0.02 to −0.22 R in 2024–25. They only made money from Aug 2025.
+  - **A 15-minute identifier:** M15 20/50 was faster (about 1.6 trades a day) and good at €200. At €1,000 it lost
+    5 % in 2019–23 (dd −82 %). H4 alone stays the best.
+- **Live trend source:** the bot reads the 4-hour trend from about 800 hourly MT5 bars. Checked against the full
+  history, it agreed at 300 of 300 random moments.
+
+## v2.13 — 🎯⚡ Hyper Perfect (faster Perfect that still made money)
+
+- **How it trades:** the same breakout as Perfect, but it watches the **12-hour, 24-hour and 48-hour** highs at once
+  and can hold **up to 3 trades**. That is about 1.6–1.8 trades a day, roughly 3 × Perfect.
+- **Why this one:** it was the best of 6 tested combinations.
+- **Backtest (bot engine, real Standard costs, 1 % risk):**
+
+  | Start | 2019 – 23 | 2024 – mid-25 | Aug 2025 – Nov 2026 |
+  |---|---|---|---|
+  | €200 Hyper Perfect | +116 % (dd −65 %) | **+1,138 %** (dd −53 %) | **+602 %** (dd −83 %) |
+  | €200 Perfect | +64 % (dd −62 %) | +318 % (dd −26 %) | +265 % (dd −34 %) |
+  | €1,000 Hyper Perfect | −18 % (dd −82 %) | +522 % | +64 % |
+  | €1,000 Perfect | +41 % | +153 % | +22 % |
+
+  - **Small accounts:** from €200 it was profitable in every period.
+  - **Swings:** it has much bigger swings. It dropped −83 % before recovering in 2025–26.
+  - **At €1,000:** it lost in 2019–23, because 3 open trades at full 1 % risk is a lot when the market chops.
+  - **Unchanged:** it only buys, like Perfect.
+- **Other combinations tested:** adding 6-hour channels, sells or 15-minute channels made it faster but **blew
+  €200** in 2019–23.
+
 ## v2.12 — 🧠 trade memory: learns from its own wins and losses while trading
 
 **How it learns:** after every closed trade, the bot files the result under its situation: BUY or SELL × session
