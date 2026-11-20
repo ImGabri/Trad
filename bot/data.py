@@ -72,16 +72,24 @@ class MT5Connection:
         return True
 
     last_error = ""
+    _pending_init = None  # a timed-out mt5.initialize thread that is still blocked (shared by all connections)
 
     def _initialize_with_timeout(self, kwargs: dict, timeout_s: float) -> bool:
         """mt5.initialize can block for ever when the terminal shows a dialog, is updating or is not logged in.
-        Run it in a helper thread and give up after timeout_s with a clear message instead of hanging silently."""
+        Run it in a helper thread and give up after timeout_s with a clear message instead of hanging silently.
+        While an earlier timed-out call is still blocked, no second one is started (no thread pile-up)."""
         import threading
+        prev = MT5Connection._pending_init
+        if prev is not None and prev.is_alive():
+            self.last_error = ("MT5 is still not answering the previous connection attempt. Open the PU Prime MT5 window, "
+                               "close any pop-up/update dialog and make sure you are logged in.")
+            return False
         box = {}
         th = threading.Thread(target=lambda: box.setdefault("ok", bool(mt5.initialize(**kwargs))), daemon=True)
         th.start()
         th.join(timeout_s)
         if th.is_alive():
+            MT5Connection._pending_init = th
             self.last_error = (f"MT5 did not answer within {int(timeout_s)} s. Open the PU Prime MT5 window: close any "
                                "pop-up/update dialog, make sure you are logged in to your demo account, then press STOP "
                                "and START.")
@@ -118,17 +126,6 @@ class MT5Connection:
             self.server_offset = timedelta(hours=int(cfg_off))
             return
         
-        # Check if user wants to skip market open check for uninterrupted trading
-        if self.cfg.strategy.skip_market_open_check:
-            # Use configured offset or default Austria-appropriate offset
-            if cfg_off != "auto":
-                self.server_offset = timedelta(hours=int(cfg_off))
-            else:
-                # Default to UTC+2 for PU Prime gold, adjustable for Austria timezone
-                log.info("skip_market_open_check enabled — using default offset UTC+2")
-                self.server_offset = timedelta(hours=2)
-            return
-        
         try:  # the account's real gold symbol (e.g. XAUUSD.s) — plain "XAUUSD" may not quote on this account
             sym = self.resolve_gold(self.cfg.symbols.primary)
         except RuntimeError:
@@ -136,12 +133,45 @@ class MT5Connection:
         mt5.symbol_select(sym, True)
         tick = mt5.symbol_info_tick(sym)
         if tick is None or _market_closed_now():
-            log.warning("Cannot auto-detect server offset (market closed?) — assuming UTC+2")
+            log.warning("Cannot auto-detect server offset (market closed?) — assuming UTC+2 until the market is live")
             self.server_offset = timedelta(hours=2)
+            self._offset_provisional = True     # refresh_offset() corrects it as soon as live ticks arrive
             return
         hours = round((tick.time - time.time()) / 3600)
         self.server_offset = timedelta(hours=hours)
+        self._offset_provisional = False
         log.info("Detected MT5 server offset UTC%+d", hours)
+
+    _offset_provisional = False
+    _offset_check = (0.0, None)   # (monotonic time of the last check, last tick time_msc seen)
+
+    def refresh_offset(self, symbol: str) -> bool:
+        """Re-detect the broker's UTC offset from LIVE ticks: every minute while it is only assumed (connected on a
+        weekend / while gold was closed), else every 5 min (catches the summer/winter-time switch). Only when the tick
+        clock advanced since the last check, i.e. the market is really trading. True when the offset changed (all
+        cached bar windows are then discarded, because their UTC timestamps were wrong)."""
+        if str(self.cfg.broker.server_utc_offset_hours) != "auto":
+            return False
+        now = time.monotonic()
+        last, last_msc = self._offset_check
+        if now - last < (60 if self._offset_provisional else 300):
+            return False
+        tick = mt5.symbol_info_tick(symbol)
+        msc = int(getattr(tick, "time_msc", 0) or 0) if tick is not None else 0
+        self._offset_check = (now, msc)
+        if tick is None or not msc or last_msc is None or msc == last_msc:
+            return False                            # no fresh tick between two checks → market not live, keep waiting
+        hours = round((tick.time - time.time()) / 3600)
+        new = timedelta(hours=hours)
+        self._offset_provisional = False
+        if new == self.server_offset:
+            return False
+        log.warning("MT5 server offset corrected: UTC%+.0f → UTC%+d (bar times re-aligned)",
+                    (self.server_offset or timedelta(0)).total_seconds() / 3600, hours)
+        self.server_offset = new
+        self.generation += 1
+        self._rates_cache.clear()
+        return True
 
     def to_utc(self, server_epoch: np.ndarray | pd.Series) -> pd.DatetimeIndex:
         idx = pd.to_datetime(np.asarray(server_epoch), unit="s", utc=True)

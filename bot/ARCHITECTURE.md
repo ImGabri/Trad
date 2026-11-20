@@ -80,6 +80,9 @@ flowchart LR
 | `history.py` | ✅ | Public OANDA 1-minute history (Hugging Face) for gold + context markets, cached and extended locally |
 | `optimize.py` | ✅ | Random search over rules/exits/limits, scored by real account growth from your balance; adopted only if profitable on tune AND validation |
 | `assets/events_usd.csv` | ✅ | Verified 2019–2026 US calendar from official BLS/BEA/Census/Fed/ISM schedules (987 releases) |
+| `signals.py` | ✅ | Public Telegram gold channels (web preview, parallel fetch with back-off): parser (gold posts only, edits update in place), zone/order trade rules shared by grading and live, channel learner, per-lane signal-rating AI (LightGBM, seed + live grades) |
+| `memory.py` | ✅ | Trade memory for the fast styles: skips situations (style · side · session · volatility) that kept losing |
+| `analyst.py`, `news_local.py` | ✅ | 15-minute chart outlook model and the optional local news agent (can veto entries) |
 
 ## PUPrime symbols (confirmed from the Codex data, demo server PUPrime-Demo)
 
@@ -89,7 +92,8 @@ feature stays empty.
 
 ## Decisions and caveats
 
-* **Time**: MT5 returns server time (PUPrime is usually UTC+2/+3 with DST). Everything is converted to UTC; offset auto-detected or set in config.
+* **Time**: MT5 returns server time (PUPrime is usually UTC+2/+3 with DST). Everything is converted to UTC; offset auto-detected or set in config. While the market is closed the offset is only assumed (UTC+2); the live loop re-checks it from live ticks (every minute until confirmed, then every 5 min — catches the DST switch).
+* **Robustness**: every file the dashboard reads is written atomically; one failing loop helper (Telegram, calendar, status, positions) is logged and skipped, never fatal; when MT5 does not list the positions the cycle is skipped instead of treating every trade as closed.
 * **No look-ahead**: higher-timeframe values join on bar *close* time; decisions at M1 close fill at the next bar's open.
 * **Fills**: bars are bid; longs pay ask. SL/time/forced exits pay slippage, TP is a limit. SL is assumed first when a bar hits both.
 * **Sunday window**: the market opens at 22:00, so "Sunday 21:00–22:00 no entries" is always closed already. I also block **22:00–23:00 Sunday**, the real post-reopen spread spike. Remove it in `config.yaml` if you disagree.

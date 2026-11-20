@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import logging
 import threading
 import time
@@ -89,6 +90,30 @@ class Telegram:
         return out
 
 
+def atomic_write_text(path: Path, text: str, retries: int = 20, best_effort: bool = False) -> bool:
+    """Write a file atomically (temp file + replace). On Windows the replace fails with PermissionError while another
+    process (the dashboard, an antivirus scan, a backup tool) has the target open — retry briefly instead of crashing.
+    best_effort=True: give up quietly after the retries (heartbeat files); otherwise re-raise the last error."""
+    path = Path(path)
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    tmp.write_text(text, encoding="utf-8")
+    err = None
+    for i in range(retries):
+        try:
+            os.replace(tmp, path)
+            return True
+        except PermissionError as e:  # target briefly locked by a reader (Windows)
+            err = e
+            time.sleep(0.02 + 0.02 * (i % 3))
+    try:
+        tmp.unlink()
+    except OSError:
+        pass
+    if best_effort:
+        return False
+    raise err
+
+
 class Status:
     """status.json heartbeat read by the launcher's status screen."""
 
@@ -98,9 +123,8 @@ class Status:
 
     def update(self, **kw):
         self.state.update(kw, heartbeat=time.time())
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self.state, indent=2, default=str), encoding="utf-8")
-        tmp.replace(self.path)
+        # best effort: a heartbeat that cannot be written this time is simply written again 2 s later
+        atomic_write_text(self.path, json.dumps(self.state, default=str), best_effort=True)
 
     @staticmethod
     def read(path: Path) -> dict:
@@ -108,7 +132,7 @@ class Status:
             d = json.loads(path.read_text(encoding="utf-8"))
             d["heartbeat_age_s"] = round(time.time() - d.get("heartbeat", 0))
             return d
-        except (FileNotFoundError, json.JSONDecodeError):
+        except (OSError, json.JSONDecodeError):  # missing, or briefly locked / half-written on Windows
             return {}
 
 

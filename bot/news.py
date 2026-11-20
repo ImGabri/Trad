@@ -52,13 +52,29 @@ def nfp_dates(start: date, end: date) -> pd.DataFrame:
 
 
 def _read(path: Path) -> pd.DataFrame:
+    """One calendar CSV. A broken file (wrong header, a bad date — e.g. a hand-edited events_manual.csv) is skipped
+    with a warning instead of stopping the bot; unparseable rows are dropped."""
+    empty = pd.DataFrame(columns=["time_utc", "title", "source"])
     if not path.exists():
-        return pd.DataFrame(columns=["time_utc", "title", "source"])
-    df = pd.read_csv(path)
-    df["time_utc"] = pd.to_datetime(df["time_utc"], utc=True)
-    if "source" not in df:
-        df["source"] = "manual"
-    return df[["time_utc", "title", "source"]]
+        return empty
+    try:
+        df = pd.read_csv(path)
+        if "time_utc" not in df:
+            log.warning("calendar file %s has no time_utc column — ignored", path.name)
+            return empty
+        df["time_utc"] = pd.to_datetime(df["time_utc"], utc=True, errors="coerce", format="mixed")
+        bad = int(df["time_utc"].isna().sum())
+        if bad:
+            log.warning("calendar file %s: %d row(s) with an unreadable time ignored", path.name, bad)
+        df = df.dropna(subset=["time_utc"])
+        if "title" not in df:
+            df["title"] = "event"
+        if "source" not in df:
+            df["source"] = "manual"
+        return df[["time_utc", "title", "source"]]
+    except Exception as e:  # noqa: BLE001
+        log.warning("calendar file %s unreadable (%s) — ignored", path.name, e)
+        return empty
 
 
 def refresh_calendar(cfg, data_dir: Path) -> pd.DataFrame:
@@ -72,7 +88,11 @@ def refresh_calendar(cfg, data_dir: Path) -> pd.DataFrame:
         log.warning("ForexFactory calendar unavailable: %s", e)
     cal = cal.drop_duplicates(subset=["time_utc", "title"]).sort_values("time_utc")
     data_dir.mkdir(parents=True, exist_ok=True)
-    cal.to_csv(path, index=False)
+    from monitor import atomic_write_text   # the live loop may be reading it at this moment (Windows file locks)
+    try:
+        atomic_write_text(path, cal.to_csv(index=False))
+    except OSError as e:
+        log.warning("cannot save %s: %s", path, e)
     return cal
 
 

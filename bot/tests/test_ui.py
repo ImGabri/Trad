@@ -69,7 +69,7 @@ def test_style_presets_are_complete_and_detected(tmp_path, monkeypatch):
     ui._write_user({"risk": {"risk_per_trade_pct": 9}})                 # an old manual tweak …
     ui._write_user(ui.STYLES["perfect"], replace=True)                   # … is cleared by choosing a style
     assert "risk_per_trade_pct" not in (tmp_path / "user.yaml").read_text()
-    for style, mode, tf in (("extreme", "basket", "m1"), ("hyper", "basket", "m1"), ("basket", "basket", "m5"), ("perfect", "turbo", None), ("both", "turbo", None), ("hyperperfect", "turbo", None), ("hyperh4", "turbo", None), ("hypermax", "turbo", None), ("hypermax5", "turbo", None), ("predictmax5", "turbo", None)):
+    for style, mode, tf in (("extreme", "basket", "m1"), ("hyper", "basket", "m1"), ("basket", "basket", "m5"), ("perfect", "turbo", None), ("both", "turbo", None), ("hyperperfect", "turbo", None), ("hyperh4", "turbo", None), ("hypermax", "turbo", None), ("hypermax5", "turbo", None), ("predictmax5", "turbo", None), ("predictsafe", "turbo", None), ("hyperai", "ai", None), ("signalhyper", "signals", None), ("signalmax5", "turbo", None), ("signalhypermax5", "turbo", None), ("signalhypermax5x2", "turbo", None), ("signalai", "turbo", None), ("signalai2x", "turbo", None)):
         ui._write_user(ui.STYLES[style], replace=True)
         (tmp_path / "config.yaml").write_text((ROOT / "config.yaml").read_text())
         (tmp_path / "data").mkdir(exist_ok=True)
@@ -79,13 +79,25 @@ def test_style_presets_are_complete_and_detected(tmp_path, monkeypatch):
         if tf:
             assert cfg.basket.candles_tf == tf and cfg.risk.max_daily_trades >= 100000
         else:
-            assert cfg.strategy.sl_atr == 3.0 and cfg.strategy.tp_atr == 40.0 and not cfg.strategy.ai_gate
+            if style == "signalhyper":
+                assert cfg.signals.enabled and cfg.signals.max_away > 100 and cfg.signals.hold_h == 24
+            elif style == "hyperai":
+                assert cfg.strategy.ai_only_min_conf == 0.6 and cfg.strategy.sl_atr == 1.5 and cfg.strategy.tp_atr == 3.0
+            elif style.startswith("signalai"):
+                assert cfg.signals.ai_rate and cfg.risk.max_concurrent == 1 and not cfg.risk.conf_sizing.enabled
+                assert list(cfg.signals.lanes) == (["max", "hyper"] if style == "signalai2x" else ["max"])
+                assert cfg.risk.risk_per_trade_pct == 1.0 and cfg.risk.max_daily_trades >= 300
+            else:
+                assert cfg.strategy.sl_atr == (4.0 if style == "predictsafe" else 3.0) and cfg.strategy.tp_atr == 40.0 and not cfg.strategy.ai_gate
         assert bool(getattr(cfg.basket, "independent", False)) == (style == "hyper")
         assert str(getattr(cfg.strategy, "turbo_direction", "long")) == ("both" if style == "both" else "long") or tf
         if style == "hyperperfect":
             assert list(cfg.strategy.turbo_lookbacks) == [12, 24, 48] and cfg.risk.max_concurrent == 3
         if style == "hyperh4":
             assert cfg.strategy.turbo_regime == "h4" and cfg.risk.max_concurrent == 3
+        if style == "predictsafe":
+            assert cfg.strategy.sl_atr == 4.0 and cfg.strategy.tp_atr == 40.0 and cfg.risk.risk_per_trade_pct == 0.5
+            assert cfg.risk.conf_sizing.sure_mult == 2.5 and cfg.risk.conf_sizing.unsure_mult == 1.5
         if style == "predictmax5":
             assert cfg.risk.conf_sizing.enabled and cfg.risk.max_concurrent == 5 and cfg.strategy.time_stop_minutes == 1440
         if style == "hypermax5":
@@ -93,3 +105,18 @@ def test_style_presets_are_complete_and_detected(tmp_path, monkeypatch):
             assert cfg.strategy.time_stop_minutes == 1440
         if style == "hypermax":
             assert list(cfg.strategy.turbo_extras) == ["turtle20", "prevday", "prevweek"] and cfg.risk.max_concurrent == 3
+        if style.startswith("signal"):
+            assert cfg.signals.enabled and cfg.signals.tp_mode == "2r"
+        else:
+            assert not getattr(cfg.signals, "enabled", False), style   # other styles switch signals off
+
+
+def test_fresh_install_preselects_the_recommended_strategy(tmp_path, monkeypatch):
+    monkeypatch.setattr(ui, "DATA", tmp_path)
+    ui.first_run_defaults()
+    import yaml
+    u = yaml.safe_load((tmp_path / "user.yaml").read_text())
+    assert u["signals"]["ai_rate"] and u["signals"]["enabled"] and u["strategy"]["mode"] == "turbo"
+    (tmp_path / "user.yaml").write_text("strategy: {mode: scalp}\n")      # an existing choice is never overwritten
+    ui.first_run_defaults()
+    assert yaml.safe_load((tmp_path / "user.yaml").read_text()) == {"strategy": {"mode": "scalp"}}

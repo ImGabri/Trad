@@ -103,6 +103,15 @@ def bot_positions(symbol: str) -> list:
     return [p for p in (mt5.positions_get(symbol=symbol) or []) if p.magic == MAGIC]
 
 
+def bot_positions_or_none(symbol: str) -> list | None:
+    """Like bot_positions, but None when MT5 could not answer (positions_get() → None). Callers that manage or count
+    positions must skip the cycle then — an empty list would make every open trade look closed."""
+    got = mt5.positions_get(symbol=symbol)
+    if got is None:
+        return None
+    return [p for p in got if p.magic == MAGIC]
+
+
 def modify_sl(pos, new_sl: float) -> bool:
     info = mt5.symbol_info(pos.symbol)
     tick = mt5.symbol_info_tick(pos.symbol)

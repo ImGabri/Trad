@@ -10,7 +10,7 @@ from typing import Any
 import yaml
 
 DEFAULT_PATH = Path(__file__).with_name("config.yaml")
-TURBO_USER_STRATEGY_KEYS = {"time_stop_minutes", "skip_market_open_check"}
+TURBO_USER_STRATEGY_KEYS = {"time_stop_minutes", "sl_atr", "tp_atr", "skip_market_open_check"}  # style-preset exits
 
 
 def _ns(obj: Any) -> Any:
@@ -19,6 +19,28 @@ def _ns(obj: Any) -> Any:
     if isinstance(obj, list):
         return [_ns(v) for v in obj]
     return obj
+
+
+_YAML_CACHE: dict = {}
+try:  # libyaml (C) parser when available — ~10× faster than the pure-Python one
+    _Loader = yaml.CSafeLoader
+except AttributeError:  # pragma: no cover
+    _Loader = yaml.SafeLoader
+
+
+def _yaml(path: Path):
+    """Parsed YAML of a file, cached by (mtime, size): the dashboard reads the config several times a second.
+    Returns a deep copy so callers can merge/mutate freely."""
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    key = str(path)
+    hit = _YAML_CACHE.get(key)
+    if hit is None or hit[0] != (st.st_mtime_ns, st.st_size):
+        hit = ((st.st_mtime_ns, st.st_size), yaml.load(path.read_text(encoding="utf-8"), Loader=_Loader))
+        _YAML_CACHE[key] = hit
+    return copy.deepcopy(hit[1])
 
 
 def _load_dotenv(path: Path) -> None:
@@ -36,22 +58,22 @@ def _load_dotenv(path: Path) -> None:
 def load_config(path: str | Path | None = None, overrides: dict | None = None, use_tuned: bool = True,
                 tuned_path: str | Path | None = None) -> SimpleNamespace:
     path = Path(path or os.environ.get("XAU_CONFIG", DEFAULT_PATH))
-    raw = yaml.safe_load(path.read_text())
+    raw = _yaml(path)
     data_dir = path.parent / "data"
     tuned = Path(tuned_path) if tuned_path else data_dir / "tuned.yaml"
     if use_tuned and tuned.exists():  # written by the optimizer
-        t = yaml.safe_load(tuned.read_text()) or {}
+        t = _yaml(tuned) or {}
         t.pop("_tuning", None)
         _deep_update(raw, t)
     user = data_dir / "user.yaml"  # dashboard settings — always win
     if user.exists():
-        _deep_update(raw, yaml.safe_load(user.read_text()) or {})
+        _deep_update(raw, _yaml(user) or {})
     if overrides:
         _deep_update(raw, copy.deepcopy(overrides))
     if str(raw.get("strategy", {}).get("mode", "scalp")).lower() == "turbo" and isinstance(raw.get("turbo"), dict):
         _deep_update(raw, copy.deepcopy(raw["turbo"]))  # Turbo's own exits / risk (config.yaml `turbo:` section)
         if user.exists():  # explicit dashboard settings still win
-            u = yaml.safe_load(user.read_text()) or {}
+            u = _yaml(user) or {}
             _deep_update(raw, {k: v for k, v in u.items() if k != "strategy"})
             # style presets may set their own tested hold time (e.g. Hyper Max 5: 24 h); other user strategy keys
             # (scalping exits, equity-% take profit) must not override Turbo's tested exits

@@ -172,6 +172,26 @@ analyst:                     # "what will probably happen next" — see analyst.
   news_interval_min: 15
   news_veto_conf: 0.75       # skip a trade only when headlines strongly point the other way (not backtestable → cautious)
 
+signals:                     # 📡 live public Telegram signal channels (dashboard → Signal channels). Read-only web preview.
+  enabled: false
+  channels: [Forexstar_Gold, UnitedKingsOfficial, EliteGoldTraders03, AnabelSignals, xauusd_signals, GoldPrincess, callistofx]
+  poll_s: 20                 # check every channel every 20 s
+  valid_h: 4                 # a zone post is tradeable for 4 h
+  hold_h: 8                  # signal trades are closed after 8 h at the latest
+  max_away: 5.0              # order posts: trade only while price is within $5 of the posted entry
+  tp_mode: 2r                # 2r = target 2 × the risk (optimised); first = the channel's TP1
+  max_open: 5                # signal trades open at once (on top of the style's own trades)
+  max_daily: 60              # signal trades per UTC day (own count: never uses the style's daily trade limit)
+  risk_pct: 0.5              # risk per signal trade (sized off its stop)
+  min_lot_max_risk_pct: 25   # small accounts: a signal trade may use the minimum 0.01 lot if that risks ≤ 25 % (never more)
+  min_graded: 100            # the signal AI judges a channel after 100 graded signals; it only drops clearly losing ones
+  require_h4: false          # true = only take signals in the 4-hour trend's direction
+  lanes: []                  # [max, hyper] = trade each signal in two lanes (≤ $5 / 8 h and any distance / 24 h)
+  ai_rate: false             # true = the signal-rating AI judges every signal per lane (🔮 Signal AI styles)
+  ai_threshold: 0.0          # take a lane only if the AI expects more than this $ per 0.01 lot after costs
+  boost_mult: 1.0            # size × this when the AI expects more than boost_above
+  boost_above: 0.5
+
 learning:
   trade_memory: true         # fast styles (basket / extreme / hyper) learn while trading which situations lose and skip them
                              # (data/learning/memory.json; seeded from the 2020–26 backtest). Off for 🎯 Perfect — it hurt there.
