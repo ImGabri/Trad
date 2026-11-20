@@ -3,6 +3,26 @@
 A self-learning gold scalper with a one-click dashboard. It trades XAUUSD on your PU Prime MT5 demo, runs in
 the background, restarts at every Windows logon and retrains itself every weekend on everything it has collected.
 
+## v2.18 — 🔮 Predict Max 5
+
+**What it is:** Hyper Max 5's trades, with the AI's prediction of the next 25 minutes setting the size. It risks
+**1.5 ×** when the AI agrees with the breakout and **0.5 ×** when it does not.
+
+**How it was tested:** 7 ways of combining the prediction with Hyper Max 5, using the AI's **out-of-sample**
+walk-forward predictions (the model never saw those prices). The test runs from 2019 to Jul 2026, at 1 % base risk.
+
+| Version | €200: 2019–23 / 2024–25 / Aug 25–Jul 26 | €1,000: same periods | Trades/day |
+|---|---|---|---|
+| 🎯🔥⚡ Hyper Max 5 | +265 / +1,304 / +911 % | +356 / +956 / +272 % | 1.86 |
+| 🔮 **Predict Max 5** (AI sizing) | **+300 / +1,958** / +797 % | +328 / +719 / **+469 %** | 1.84 |
+| AI as a filter (skip if P < 0.50) | +160 / +281 / +987 % | +94 / +154 / +265 % | 1.08 |
+| AI as a strict filter (P ≥ 0.52) | +116 / +94 / +311 % (dd only −16 … −47 %) | +46 / +52 / +68 % | 0.48 |
+
+- **The model is weak:** about 51.5 % right. As a **filter** it skipped many of the big winners, so it was worse.
+- **For sizing:** better in 3 of the 6 cells and slightly higher growth overall at both sizes. That is a small
+  edge, not a reliable one.
+- **Drawdowns:** still large, up to −78 %.
+
 ## v2.17 — re-optimised Hyper Max 5, and a faster bot
 
 **Hyper Max 5 exits re-optimised.** 28 exit and risk variants were tested: stop 2–4 × ATR, target 20/40 × ATR,

@@ -1,0 +1,43 @@
+name,eur,part,ret,dd,per_day,blown
+Hyper Max 5,200,develop,265,-83,1.73,False
+Hyper Max 5,200,validate,1304,-70,1.97,False
+Hyper Max 5,200,holdout,911,-54,1.92,False
+Hyper Max 5,1000,develop,356,-88,1.73,False
+Hyper Max 5,1000,validate,956,-34,1.95,False
+Hyper Max 5,1000,holdout,272,-50,1.89,False
+gate P(side)>=0.50,200,develop,160,-42,0.51,False
+gate P(side)>=0.50,200,validate,281,-73,1.1,False
+gate P(side)>=0.50,200,holdout,987,-51,1.67,False
+gate P(side)>=0.50,1000,develop,94,-51,0.51,False
+gate P(side)>=0.50,1000,validate,154,-25,1.06,False
+gate P(side)>=0.50,1000,holdout,265,-47,1.65,False
+gate >=0.48,200,develop,153,-75,1.07,False
+gate >=0.48,200,validate,930,-60,1.57,False
+gate >=0.48,200,holdout,867,-56,1.76,False
+gate >=0.48,1000,develop,174,-82,1.07,False
+gate >=0.48,1000,validate,709,-31,1.56,False
+gate >=0.48,1000,holdout,233,-51,1.73,False
+gate >=0.52,200,develop,116,-45,0.17,False
+gate >=0.52,200,validate,94,-47,0.52,False
+gate >=0.52,200,holdout,311,-47,0.81,False
+gate >=0.52,1000,develop,46,-21,0.16,False
+gate >=0.52,1000,validate,52,-16,0.48,False
+gate >=0.52,1000,holdout,68,-23,0.73,False
+size 1.5x/0.5x,200,develop,300,-72,1.73,False
+size 1.5x/0.5x,200,validate,1958,-70,1.97,False
+size 1.5x/0.5x,200,holdout,797,-63,1.92,False
+size 1.5x/0.5x,1000,develop,328,-78,1.73,False
+size 1.5x/0.5x,1000,validate,719,-34,1.81,False
+size 1.5x/0.5x,1000,holdout,469,-70,1.91,False
+gate 0.48 + size,200,develop,261,-70,1.07,False
+gate 0.48 + size,200,validate,1406,-60,1.57,False
+gate 0.48 + size,200,holdout,686,-64,1.76,False
+gate 0.48 + size,1000,develop,292,-76,1.07,False
+gate 0.48 + size,1000,validate,652,-34,1.43,False
+gate 0.48 + size,1000,holdout,456,-71,1.75,False
+gate 0.50 + size,200,develop,111,-62,0.51,False
+gate 0.50 + size,200,validate,301,-73,1.1,False
+gate 0.50 + size,200,holdout,824,-62,1.67,False
+gate 0.50 + size,1000,develop,150,-68,0.51,False
+gate 0.50 + size,1000,validate,243,-38,1.1,False
+gate 0.50 + size,1000,holdout,486,-69,1.67,False
