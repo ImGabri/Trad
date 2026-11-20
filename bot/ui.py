@@ -195,6 +195,14 @@ STYLES["predictmax5"] = {"strategy": dict(STYLES["hypermax5"]["strategy"]),
 STYLES["predictsafe"] = {"strategy": dict(STYLES["hypermax5"]["strategy"], sl_atr=4.0, tp_atr=40.0),
                          "risk": dict(STYLES["hypermax5"]["risk"], risk_per_trade_pct=0.5,
                                       conf_sizing={"enabled": True, "sure_above": 0.5, "sure_mult": 2.5, "unsure_mult": 1.5})}
+# 🤖 Hyper AI: pure AI — no rules; the M1 model alone opens a trade (either direction) when it is ≥ 60 % sure. Best of 9 tested
+# pure-AI settings (confidence 0.53/0.56/0.60 × scalp/swing/trend exits) and it still LOST: €200 blown in 2019–23, −28 %
+# in 2024–25, +2 % Aug 2025–Jul 2026 (the AI is right only ~51.5 % of the time). Experimental, demo only.
+STYLES["hyperai"] = {"strategy": {"mode": "ai", "ai_gate": True, "ai_only_min_conf": 0.60, "confidence_threshold": 0.5,
+                                  "sl_atr": 1.5, "tp_atr": 3.0, "time_stop_minutes": 240, "trail_trigger_atr": 99.0,
+                                  "trail_distance_atr": 99.0, "equity_tp_pct": 0.0},
+                     "risk": {"risk_per_trade_pct": 1.0, "max_concurrent": 3, "max_daily_trades": 200},
+                     "analyst": {"veto_conf": 0.0}, "sessions": {"asia_enabled": True, "asia_min_confidence": 0.5}}
 STYLES["both"] = {"strategy": {"mode": "turbo", "turbo_direction": "both"}}
 BASKET_DEFAULT = {"candles_tf": "m5", "candles": 5, "follow": True, "step_atr": 0.75, "max_entries": 2, "tp_atr": 1.0,
                   "sl_atr": 6.0, "hold_minutes": 240, "equity_per_001": 50}
@@ -257,6 +265,8 @@ def _style() -> str:
                 return "hypermax"
             return "hyperh4" if str(getattr(st, "turbo_regime", "") or "") == "h4" else "hyperperfect"
         return "both" if str(getattr(st, "turbo_direction", "long")) == "both" else "turbo"
+    if str(getattr(st, "mode", "scalp")) == "ai":
+        return "hyperai"
     if str(getattr(st, "mode", "scalp")) == "basket":
         b = load_config(APP / "config.yaml").basket
         if getattr(b, "independent", False):
@@ -442,6 +452,7 @@ def action(name: str, body: dict) -> str:
                "turbo": "🎯 Perfect: the best backtested strategy (hourly trend breakouts, 1 % risk). Use €100+.",
                "perfect": "🎯 Perfect: the best backtested strategy (hourly trend breakouts, 1 % risk). Use €100+.",
                "extreme": "☠️ Extreme: ~85 trades a day, buys AND sells with the last 2 candles. Lost money in every backtest period.",
+               "hyperai": "🤖 Hyper AI: pure AI, no rules — trades whenever the AI is ≥ 60 % sure. Lost money in backtests (demo experiment).",
                "predictsafe": "🔮🛡 Predict Max 5 Safe: both Hyper Max 5 and Predict Max 5 at once, at half risk with a wider stop. Worst backtest drop −78 % (−43 % in 2025–26).",
                "predictmax5": "🔮 Predict Max 5: Hyper Max 5 trades with the AI's prediction setting the size (1.5× when it agrees, 0.5× when not).",
                "hypermax5": "🎯🔥⚡ Hyper Max 5: Hyper Max with up to 5 trades open (~1.9 a day), trades held up to 24 h. Bigger swings (backtest drawdowns up to −88 %).",

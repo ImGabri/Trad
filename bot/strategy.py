@@ -321,6 +321,9 @@ def compute_signals(f: pd.DataFrame, cfg, events: pd.DatetimeIndex | None = None
         out["rule_signal"] = sig
     elif mode == "basket":
         out["rule_signal"] = basket_signal(f, cfg)
+    elif mode == "ai":  # 🤖 Hyper AI: no rules at all — the AI alone opens trades (strategy.ai_only_min_conf), both ways
+        out["rule_signal"] = 0
+        out["bias"] = 0
     out = out.join(session_state(f.index, cfg)).join(news_phase(f.index, events, cfg))
     for col in ("session", "news_phase"):  # categoricals: ~8× smaller than Python string objects
         out[col] = out[col].astype("category")

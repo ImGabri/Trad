@@ -69,7 +69,7 @@ def test_style_presets_are_complete_and_detected(tmp_path, monkeypatch):
     ui._write_user({"risk": {"risk_per_trade_pct": 9}})                 # an old manual tweak …
     ui._write_user(ui.STYLES["perfect"], replace=True)                   # … is cleared by choosing a style
     assert "risk_per_trade_pct" not in (tmp_path / "user.yaml").read_text()
-    for style, mode, tf in (("extreme", "basket", "m1"), ("hyper", "basket", "m1"), ("basket", "basket", "m5"), ("perfect", "turbo", None), ("both", "turbo", None), ("hyperperfect", "turbo", None), ("hyperh4", "turbo", None), ("hypermax", "turbo", None), ("hypermax5", "turbo", None), ("predictmax5", "turbo", None), ("predictsafe", "turbo", None)):
+    for style, mode, tf in (("extreme", "basket", "m1"), ("hyper", "basket", "m1"), ("basket", "basket", "m5"), ("perfect", "turbo", None), ("both", "turbo", None), ("hyperperfect", "turbo", None), ("hyperh4", "turbo", None), ("hypermax", "turbo", None), ("hypermax5", "turbo", None), ("predictmax5", "turbo", None), ("predictsafe", "turbo", None), ("hyperai", "ai", None)):
         ui._write_user(ui.STYLES[style], replace=True)
         (tmp_path / "config.yaml").write_text((ROOT / "config.yaml").read_text())
         (tmp_path / "data").mkdir(exist_ok=True)
@@ -79,7 +79,10 @@ def test_style_presets_are_complete_and_detected(tmp_path, monkeypatch):
         if tf:
             assert cfg.basket.candles_tf == tf and cfg.risk.max_daily_trades >= 100000
         else:
-            assert cfg.strategy.sl_atr == (4.0 if style == "predictsafe" else 3.0) and cfg.strategy.tp_atr == 40.0 and not cfg.strategy.ai_gate
+            if style == "hyperai":
+                assert cfg.strategy.ai_only_min_conf == 0.6 and cfg.strategy.sl_atr == 1.5 and cfg.strategy.tp_atr == 3.0
+            else:
+                assert cfg.strategy.sl_atr == (4.0 if style == "predictsafe" else 3.0) and cfg.strategy.tp_atr == 40.0 and not cfg.strategy.ai_gate
         assert bool(getattr(cfg.basket, "independent", False)) == (style == "hyper")
         assert str(getattr(cfg.strategy, "turbo_direction", "long")) == ("both" if style == "both" else "long") or tf
         if style == "hyperperfect":

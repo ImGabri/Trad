@@ -3,6 +3,22 @@
 A self-learning gold scalper with a one-click dashboard. It trades XAUUSD on your PU Prime MT5 demo, runs in
 the background, restarts at every Windows logon and retrains itself every weekend on everything it has collected.
 
+## v2.20 — 🤖 Hyper AI and a ranked style list
+
+- **Ranked style list:** the style buttons can be ranked by **🏆 Best profit**, **⚡ Most trades/day** or
+  **🛡 Safest**.
+  - **Profit** is combined €200 backtest growth over the three periods. **Safest** is the smallest worst drop.
+  - Each button shows its rank and backtest numbers. Styles that lost money are marked red.
+  - Your choice is remembered.
+- **🤖 Hyper AI:** pure AI, no rules. The AI alone opens a buy or sell whenever it is ≥ 60 % sure of the next
+  25 minutes, with a stop of 1.5 × ATR, a target of 3 × ATR, a 4 h maximum and up to 3 trades.
+  - **Tested:** 9 settings (confidence 0.53 / 0.56 / 0.60 × scalp / swing / trend exits), using the AI's
+    out-of-sample predictions.
+  - **Result:** every setting lost. This is the least bad: €200 **blown** in 2019–23, −28 % in 2024–25 and +2 % in
+    Aug 2025 – Jul 2026.
+  - **Why:** the AI is right only about 51.5 % of the time, which is not enough to beat the spread on its own. It is
+    a demo experiment.
+
 ## v2.19 — 🔮🛡 Predict Max 5 Safe
 
 **What it is:** Hyper Max 5 and Predict Max 5 at the same time, made safe. Both take the same trades, so "both at

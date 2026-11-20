@@ -210,6 +210,18 @@ body:not(.ready) #sig:empty{min-height:200px}
 .foot .row .btn .ico{width:15px;height:15px;color:var(--gold)}
 @media (max-width:520px){main{padding:14px 12px 40px;gap:12px}.card{padding:15px}.status .big{font-size:22px}.money .n{font-size:28px}.top{padding:10px 12px}.foot .btn[style*="auto"]{margin-left:0!important}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+
+.rankbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 10px}.rankbar span{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mute);margin-right:4px}
+.rankbar button{font:inherit;font-size:12px;font-weight:600;padding:5px 10px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--ink2);cursor:pointer}
+.rankbar button.on{border-color:var(--gold);color:var(--ink);background:linear-gradient(160deg,rgba(236,191,85,.22),rgba(236,191,85,.06))}
+#styleSeg.ranked{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+@media (max-width:920px){#styleSeg.ranked{grid-template-columns:repeat(2,minmax(0,1fr))}}@media (max-width:640px){#styleSeg.ranked{grid-template-columns:minmax(0,1fr)}}
+#styleSeg button .rk{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:18px;padding:0 5px;margin-right:6px;border-radius:6px;font-size:11px;font-weight:800;background:rgba(236,191,85,.16);color:var(--gold)}
+#styleSeg button.lost .rk{background:rgba(242,95,92,.15);color:var(--bad)}
+#styleSeg button .sx{font-size:10.5px;font-weight:600;color:var(--ink2);line-height:1.35;margin-top:2px;white-space:normal}
+#styleSeg button.lost .sx{color:color-mix(in srgb,var(--bad) 75%,var(--ink2))}
+#styleSeg button.lost:hover{border-color:rgba(242,95,92,.4)}
+#styleSeg button.lost.on{background:linear-gradient(160deg,rgba(242,95,92,.2),rgba(242,95,92,.05));border-color:var(--bad);box-shadow:0 0 0 1px var(--bad) inset}
 </style>
 </head>
 <body>
@@ -244,9 +256,13 @@ body:not(.ready) #sig:empty{min-height:200px}
       <div class="l" style="margin-top:8px">Today</div><div class="d" id="today">–</div></div>
     <div class="styles">
       <div class="ctrl-label" style="margin-top:0">Trading style</div>
+      <div class="rankbar" id="rankBar" role="group" aria-label="Rank styles by"><span>Rank by</span>
+        <button data-k="profit" class="on" onclick="rankStyles('profit')">🏆 Best profit</button>
+        <button data-k="speed" onclick="rankStyles('speed')">⚡ Most trades/day</button>
+        <button data-k="safe" onclick="rankStyles('safe')">🛡 Safest</button></div>
       <div class="seg" id="styleSeg">
         <div class="sg sg-pro"><div class="sg-h"><i></i>Profitable in backtests</div><div class="sg-b">
-          <button data-v="turbo" onclick="act('style',{style:'perfect'})" title="Best backtested strategy: profitable in 2019–23, 2024–25 and Aug 2025–Nov 2026 from €100"><span class="sn">🎯 Perfect</span><span class="st">Hourly breakout · best overall</span></button>
+          <button data-v="turbo" onclick="act('style',{style:'perfect'})" title="Best backtested strategy: profitable in 2019–23, 2024–25 and Aug 2025–Nov 2026 from €100"><span class="sn">🎯 Perfect</span><span class="st">Hourly breakout · calmest</span></button>
           <button data-v="hyperperfect" onclick="if(confirm('HYPER PERFECT: the Perfect breakout on 12h, 24h and 48h at the same time, up to 3 trades open (~2 trades a day, 3x Perfect). Backtest at €200, 1% risk: +116% (2019–23), +1,138% (2024–25), +602% (Aug 2025–Nov 2026) — profitable in every period, but drops of up to -83% along the way. Switch?'))act('style',{style:'hyperperfect'})" title="Faster Perfect: 3 breakout channels, up to 3 trades"><span class="sn">🎯⚡ Hyper Perfect</span><span class="st">3 channels · up to 3 trades</span></button>
           <button data-v="hypermax" onclick="if(confirm('HYPER MAX: Hyper + H4 plus three more breakout rules found by the strategy research — 20-day high (buy), previous-day high/low in the 4-hour trend direction (buy and sell), previous-week high (buy). Up to 3 trades, ~1.6 a day. Backtest at 1% risk: €200 +202% / +1,114% / +745%, €1,000 +176% / +591% / +140% (2019–23 / 2024–25 / 2025–26) — better than Hyper + H4 in every test. Drops of up to -72% along the way. Switch?'))act('style',{style:'hypermax'})" title="Best backtest of all styles"><span class="sn">🎯🔥 Hyper Max</span><span class="st">Best backtest · ~1.6 trades/day</span></button>
           <button data-v="hypermax5" onclick="if(confirm('HYPER MAX 5: Hyper Max with up to 5 trades open at once (~1.9 trades a day instead of ~1.6), each held up to 24 hours. Backtest at 1% risk: €200 +265% / +1,304% / +1,046%, €1,000 +356% / +956% / +352% (2019–23 / 2024–25 / 2025–26). Bigger swings: drops of up to -88% along the way. Faster rules (1–6 h channels, 15-min breakouts, Hyper dips) all blew €200 in 2019–23. Switch?'))act('style',{style:'hypermax5'})" title="Hyper Max with up to 5 trades"><span class="sn">🎯🔥⚡ Hyper Max 5</span><span class="st">Up to 5 trades · ~1.9/day</span></button>
@@ -262,6 +278,7 @@ body:not(.ready) #sig:empty{min-height:200px}
         <div class="sg sg-exp"><div class="sg-h"><i></i>Experimental — lost in backtests</div><div class="sg-b">
           <button data-v="basket" onclick="if(confirm('Basket: trades with the last 5 five-minute candles (buys after rising, sells after falling), up to 2 positions closed together. Backtest at €100: lost the account in every period (2020–2026). Demo only. Switch?'))act('style',{style:'basket'})"><span class="sn">🧺 Basket</span><span class="st">5-candle momentum</span></button>
           <button data-v="extreme" onclick="if(confirm('EXTREME: follows every 2-candle move — 2 falling candles = SELL, 2 rising = BUY (~85 trades a day, 24h, no daily limit), each closed within 15 minutes. Backtest at €100: wins 43–56% of trades but every trade pays the spread, so €100 fell to about €12 in every period (2020–2026). Demo only. Switch?'))act('style',{style:'extreme'})"><span class="sn">☠️ Extreme</span><span class="st">~85 trades a day</span></button>
+          <button data-v="hyperai" onclick="if(confirm('HYPER AI: pure AI — no rules at all. The AI predicts the next 25 minutes every minute and opens a trade (buy or sell) whenever it is at least 60% sure; stop 1.5xATR, target 3xATR, max 4 h, up to 3 trades. Backtest: €200 was BLOWN in 2019–23, -28% in 2024–25, +2% in Aug 2025–Jul 2026 — the AI alone is right only ~51.5% of the time, too little to beat the spread. Demo experiment only. Switch?'))act('style',{style:'hyperai'})" title="Pure AI, no rules"><span class="sn">🤖 Hyper AI</span><span class="st">Pure AI · no rules</span></button>
           <button data-v="hyper" onclick="if(confirm('HYPER (directional): every minute it trades WITH the hourly trend — buys dips when gold trends up, sells rallies when it trends down. Up to 3 trades open, ~360 a day, 24h. Backtest: still about -$0.30 to -$0.37 per trade (the spread), €200 was blown in every period 2020–2026. Demo only. Switch?'))act('style',{style:'hyper'})"><span class="sn">💀 Hyper</span><span class="st">~360 trades a day</span></button>
         </div></div>
       </div>
@@ -421,6 +438,30 @@ document.body.classList.add("ready");
 loaded=true}
 async function poll(){try{const r=await fetch("/api/state",{cache:"no-store"});render(await r.json())}catch(e){$("pillTxt").textContent="Offline";$("pill").className="pill bad"}}
 poll();setInterval(poll,2000);
+
+// Style ranking: €200 backtest returns per period (2019–23 / 2024–mid-25 / Aug 2025–2026), trades a day, worst drawdown.
+// null = blown (account lost). "~" speeds are estimates. Numbers from the README backtest tables.
+const RANK={predictsafe:{r:[317,1168,1220],d:1.9,w:-78},predictmax5:{r:[300,1958,797],d:1.84,w:-78},hypermax5:{r:[265,1304,1046],d:1.86,w:-88},
+ hypermax:{r:[202,1114,745],d:1.6,w:-60},hyperh4:{r:[175,933,736],d:1.25,w:-69},hyperperfect:{r:[116,1138,602],d:1.7,w:-83},turbo:{r:[64,318,265],d:0.6,w:-62},
+ both:{r:[null,565,915],d:0.9,w:-94,note:"€100 start"},active:{r:[null,null,null],d:3,est:1,w:-100},careful:{r:[null,null,null],d:1,est:1,w:-100},
+ basket:{r:[null,null,null],d:4,est:1,w:-100},extreme:{r:[-88,-88,-88],d:85,w:-88},hyper:{r:[null,null,null],d:360,w:-100},hyperai:{r:[null,-28,2],d:0.5,est:1,w:-100}};
+let rankKey="profit";try{rankKey=localStorage.getItem("rankKey")||"profit"}catch(e){}
+function growth(o){return o.r.reduce((g,x)=>g*(x==null?0:1+x/100),1)}
+function fmtR(x){return x==null?"blown":(x>0?"+":"")+x.toLocaleString("en")+"%"}
+function rankStyles(k){rankKey=k;try{localStorage.setItem("rankKey",k)}catch(e){}
+ const seg=$("styleSeg");const btns=[...seg.querySelectorAll("button[data-v]")];
+ const ok=v=>{const o=RANK[v];return o&&o.r.every(x=>x!=null&&x>0)};
+ const key={profit:v=>growth(RANK[v]),speed:v=>RANK[v].d,safe:v=>(ok(v)?1000:0)+RANK[v].w}[k]||(v=>0);
+ const kv=b=>RANK[b.dataset.v]?key(b.dataset.v):-1e9;btns.sort((a,b)=>kv(b)-kv(a));
+ seg.classList.add("ranked");btns.forEach((b,i)=>{const o=RANK[b.dataset.v];seg.appendChild(b);if(!o)return;
+  b.classList.toggle("lost",!ok(b.dataset.v));
+  let rk=b.querySelector(".rk");if(!rk){rk=document.createElement("span");rk.className="rk";b.querySelector(".sn").prepend(rk)}rk.textContent="#"+(i+1);
+  let sx=b.querySelector(".sx");if(!sx){sx=document.createElement("span");sx.className="sx";b.appendChild(sx)}
+  sx.textContent="€200: "+o.r.map(fmtR).join(" · ")+(o.note?" ("+o.note+")":"")+" · "+(o.est?"~":"")+o.d+"/day · worst "+(o.w<=-100?"blown":o.w+"%")});
+ seg.querySelectorAll(".sg").forEach(g=>g.remove());
+ document.querySelectorAll("#rankBar button").forEach(b=>b.classList.toggle("on",b.dataset.k===k));
+ if(S)paintSeg("styleSeg",S.style)}
+document.addEventListener("DOMContentLoaded",()=>rankStyles(rankKey));
 </script>
 </body>
 </html>
