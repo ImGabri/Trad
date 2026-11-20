@@ -1,0 +1,266 @@
+"""📡 Signal reader: turns public Telegram signal-channel posts into tradeable, GRADED data.
+
+* Reads public channels through Telegram's web preview (https://t.me/s/<channel>) — no login, no account, read-only.
+* Parses two post formats:
+    - zone posts ("🔴SELL ZONE: 3889.50 - 3901.29 level … towards the 3820 level", "Aggressive BUY zone: a - b"),
+    - classic orders ("XAUUSD BUY 2350-2346  SL 2340  TP1 2355  TP2 2362").
+* Converts each post into a rule the bot can execute (`zone_trade`): wait until price taps the zone within
+  `valid_h` hours, require an M1 confirmation candle in the signal's direction, stop just beyond the zone's far edge
+  (or the posted SL), target the posted level / TP (or 2R if none), max hold `hold_h`.
+* Grades every parsed signal on real prices with the account's spread, per channel, and only lets the live bot
+  FOLLOW a channel once its graded expectancy is positive over enough signals (`min_graded`). Until then its
+  signals are paper-traded and shown on the dashboard. Live streams are not used (no reliable text).
+"""
+from __future__ import annotations
+
+import html
+import json
+import logging
+import math
+import re
+import time
+import urllib.request
+from dataclasses import dataclass, field, asdict
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+log = logging.getLogger("signals")
+NUM = r"(\d{3,5}(?:[.,]\d{1,3})?)"
+
+
+@dataclass
+class Signal:
+    channel: str
+    post_id: int
+    time: str                 # ISO UTC
+    side: int                 # +1 buy, -1 sell
+    zone_lo: float
+    zone_hi: float
+    target: float | None = None
+    sl: float | None = None
+    tps: list = field(default_factory=list)
+    kind: str = "zone"        # zone | order
+    aggressive: bool = False
+    text: str = ""
+
+
+def _f(x: str) -> float:
+    return float(x.replace(",", "."))
+
+
+def parse_post(channel: str, post_id: int, t: str, text: str) -> list[Signal]:
+    """All gold signals in one post (a post may contain a buy zone and a sell zone)."""
+    if not text or not re.search(r"(xau|gold|zone|buy|sell)", text, re.I):
+        return []
+    out: list[Signal] = []
+    tgt = re.search(r"towards (?:the )?" + NUM, text, re.I)
+    target = _f(tgt.group(1)) if tgt else None
+    for m in re.finditer(r"(aggressive\s+)?(buy|sell)\s*zone\s*:?\s*" + NUM + r"\s*[-–]\s*" + NUM, text, re.I):
+        a, b = _f(m.group(3)), _f(m.group(4))
+        side = 1 if m.group(2).lower() == "buy" else -1
+        tg = target if target is not None and (target - (a + b) / 2) * side > 0 else None
+        out.append(Signal(channel, post_id, t, side, min(a, b), max(a, b), tg, kind="zone",
+                          aggressive=bool(m.group(1)), text=text[:400]))
+    if out:
+        return out
+    m = re.search(r"\b(buy|sell)\b(?:\s+(?:now|limit|stop))?\s*@?\s*" + NUM + r"(?:\s*[-–/]\s*" + NUM + r")?", text, re.I)
+    if m and re.search(r"\b(sl|stop\s*loss|tp\d?|take\s*profit)\b", text, re.I):
+        side = 1 if m.group(1).lower() == "buy" else -1
+        a = _f(m.group(2)); b = _f(m.group(3)) if m.group(3) else a
+        sl = re.search(r"\b(?:sl|stop\s*loss)\s*:?\s*@?\s*" + NUM, text, re.I)
+        tps = [_f(x) for x in re.findall(r"\btp\s*\d?\s*:?\s*@?\s*" + NUM, text, re.I)]
+        tps = [x for x in tps if (x - (a + b) / 2) * side > 0]
+        out.append(Signal(channel, post_id, t, side, min(a, b), max(a, b), tps[0] if tps else None,
+                          _f(sl.group(1)) if sl else None, tps, kind="order", text=text[:400]))
+    return out
+
+
+# ---------------------------------------------------------------------------------------------- reading
+def fetch_channel(channel: str, pages: int = 1, before: int | None = None, pause_s: float = 1.0) -> list[dict]:
+    """Newest posts of a PUBLIC channel via its web preview. Returns [{id, time, text}] (oldest first)."""
+    posts: dict[int, dict] = {}
+    for _ in range(max(1, pages)):
+        url = f"https://t.me/s/{channel}" + (f"?before={before}" if before else "")
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (TradV2 signal reader)"})
+        page = urllib.request.urlopen(req, timeout=20).read().decode("utf-8", "replace")
+        got = []
+        for blk in page.split('class="tgme_widget_message_wrap')[1:]:
+            pid = re.search(r'data-post="[^/]+/(\d+)"', blk); tm = re.search(r'<time datetime="([^"]+)"', blk)
+            tx = re.search(r'<div class="tgme_widget_message_text js-message_text"[^>]*>(.*?)</div>', blk, re.S)
+            if not (pid and tm):
+                continue
+            txt = re.sub(r"<[^>]+>", "", re.sub(r"<br\s*/?>", "\n", tx.group(1))) if tx else ""
+            got.append(dict(id=int(pid.group(1)), time=tm.group(1), text=html.unescape(txt).strip()))
+        if not got:
+            break
+        for g in got:
+            posts[g["id"]] = g
+        before = min(g["id"] for g in got)
+        if pages > 1:
+            time.sleep(pause_s)
+    return sorted(posts.values(), key=lambda g: g["id"])
+
+
+# ---------------------------------------------------------------------------------------------- the trade rule
+def _t0(sig: Signal) -> pd.Timestamp:
+    t = pd.Timestamp(sig.time)
+    return t.tz_convert("UTC") if t.tzinfo else t.tz_localize("UTC")
+
+
+def find_confirmation(sig: Signal, bars: pd.DataFrame, spread: float = 0.32, atr: pd.Series | None = None,
+                      valid_h: float = 4.0, buffer_atr: float = 0.5, min_buffer: float = 1.0) -> tuple[int, float] | None:
+    """Index (into `bars`) of the M1 bar that CONFIRMS the signal, and the invalidation level beyond the zone.
+    Rule: within valid_h after the post, price taps the zone, then an M1 candle closes in the signal's direction;
+    if price runs beyond the zone's far edge (+ buffer) first, the signal is dead. Shared by grading and live."""
+    t0 = _t0(sig)
+    pos = np.flatnonzero((bars.index > t0) & (bars.index <= t0 + pd.Timedelta(hours=valid_h)))
+    s, lo, hi = sig.side, sig.zone_lo, sig.zone_hi
+    ask_adj = spread if s < 0 else 0.0
+    tapped = False
+    for i in pos:
+        o, h, l, c = bars.open.iat[i], bars.high.iat[i], bars.low.iat[i], bars.close.iat[i]
+        a = float(atr.asof(bars.index[i])) if atr is not None and len(atr) else 2.0
+        buf = max(min_buffer, buffer_atr * (a if math.isfinite(a) else 2.0))
+        far = (hi + buf) if s < 0 else (lo - buf)
+        if (s < 0 and h + ask_adj >= far) or (s > 0 and l <= far):
+            return None
+        if not tapped:
+            tapped = (h >= lo) if s < 0 else (l <= hi)
+            if not tapped:
+                continue
+        if (c - o) * s > 0:
+            return int(i), float(far)
+    return None
+
+
+def levels_for(sig: Signal, entry: float, far: float) -> tuple[float, float]:
+    """Stop and target for an entry: posted SL if valid else just beyond the zone; posted target/TP if ≥ 1R else 2R."""
+    s = sig.side
+    sl = sig.sl if sig.sl is not None and (entry - sig.sl) * s > 0 else far
+    risk = abs(entry - sl)
+    tp = sig.target if sig.target is not None and (sig.target - entry) * s >= 1.0 * risk else entry + s * 2 * risk
+    return float(sl), float(tp)
+
+
+def zone_trade(sig: Signal, bars: pd.DataFrame, spread: float = 0.32, atr: pd.Series | None = None,
+               valid_h: float = 4.0, hold_h: float = 8.0, buffer_atr: float = 0.5, min_buffer: float = 1.0,
+               slip: float = 0.05) -> dict | None:
+    """Simulate the trade a signal implies on M1 BID bars. None if never tapped + confirmed in time, else
+    dict(entry_time, entry, sl, tp, exit_time, exit, reason, usd) — usd = result per 1 oz (0.01 lot) after costs."""
+    c = find_confirmation(sig, bars, spread, atr, valid_h, buffer_atr, min_buffer)
+    if c is None or c[0] + 1 >= len(bars):
+        return None
+    i, far = c; j = i + 1; s = sig.side
+    ask_adj = spread if s < 0 else 0.0
+    entry = bars.open.iat[j] + (spread + slip if s > 0 else -slip)
+    sl, tp = levels_for(sig, entry, far)
+    t_in = bars.index[j]
+    rest = bars[(bars.index >= t_in) & (bars.index <= t_in + pd.Timedelta(hours=hold_h))]
+    for k in range(len(rest)):
+        hh, ll = rest.high.iat[k] + ask_adj, rest.low.iat[k] + ask_adj
+        if (s > 0 and ll <= sl) or (s < 0 and hh >= sl):
+            px, why = sl - s * slip, "sl"
+        elif (s > 0 and hh >= tp) or (s < 0 and ll <= tp):
+            px, why = tp, "tp"
+        else:
+            continue
+        return dict(entry_time=str(t_in), entry=round(entry, 2), sl=round(sl, 2), tp=round(tp, 2),
+                    exit_time=str(rest.index[k]), exit=round(px, 2), reason=why, usd=round((px - entry) * s, 3))
+    if len(rest):
+        px = rest.close.iat[-1] + ask_adj - s * slip
+        return dict(entry_time=str(t_in), entry=round(entry, 2), sl=round(sl, 2), tp=round(tp, 2),
+                    exit_time=str(rest.index[-1]), exit=round(px, 2), reason="time", usd=round((px - entry) * s, 3))
+    return None
+
+
+def grade(signals: list[Signal], bars: pd.DataFrame, spread: float = 0.32, atr: pd.Series | None = None, **kw) -> pd.DataFrame:
+    rows = []
+    for sg in signals:
+        r = zone_trade(sg, bars, spread, atr, **kw)
+        rows.append(dict(channel=sg.channel, post_id=sg.post_id, time=sg.time, side=sg.side, zone_lo=sg.zone_lo,
+                         zone_hi=sg.zone_hi, target=sg.target, kind=sg.kind, aggressive=sg.aggressive,
+                         traded=r is not None, **(r or {})))
+    return pd.DataFrame(rows)
+
+
+def channel_stats(graded: pd.DataFrame, min_graded: int = 20) -> dict:
+    """Per channel: parsed / traded / win % / avg $ per 0.01 lot / trust (follow only if avg > 0 over ≥ min_graded)."""
+    out = {}
+    if graded is None or graded.empty:
+        return out
+    for ch, g in graded.groupby("channel"):
+        t = g[g.traded]
+        avg = float(t.usd.mean()) if len(t) else 0.0
+        out[ch] = dict(parsed=int(len(g)), traded=int(len(t)), win=round(100 * float((t.usd > 0).mean()), 1) if len(t) else None,
+                       avg_usd=round(avg, 3), total_usd=round(float(t.usd.sum()), 2) if len(t) else 0.0,
+                       follow=bool(len(t) >= min_graded and avg > 0))
+    return out
+
+
+# ---------------------------------------------------------------------------------------------- live store
+class SignalBook:
+    """Live: polls channels, keeps parsed signals + grades in data/signals/, answers 'which zones are active now'."""
+
+    def __init__(self, folder: Path, channels: list[str], poll_s: float = 60, min_graded: int = 20):
+        self.folder, self.channels, self.poll_s, self.min_graded = Path(folder), list(channels), float(poll_s), int(min_graded)
+        self.folder.mkdir(parents=True, exist_ok=True)
+        self.path = self.folder / "signals.json"
+        self.signals: list[Signal] = []
+        self.graded = pd.DataFrame()
+        self.last_poll = 0.0
+        self.errors: dict[str, str] = {}
+        if self.path.exists():
+            try:
+                self.signals = [Signal(**d) for d in json.loads(self.path.read_text(encoding="utf-8"))]
+            except (ValueError, TypeError):
+                self.signals = []
+        gp = self.folder / "graded.csv"
+        if gp.exists():
+            try:
+                self.graded = pd.read_csv(gp)
+            except (ValueError, OSError):
+                pass
+
+    def due(self) -> bool:
+        return time.time() - self.last_poll >= self.poll_s
+
+    def poll(self) -> int:
+        self.last_poll = time.time()
+        known = {(s.channel, s.post_id, s.side, s.zone_lo) for s in self.signals}
+        new = 0
+        for ch in self.channels:
+            try:
+                for p in fetch_channel(ch, pages=1):
+                    for s in parse_post(ch, p["id"], p["time"], p["text"]):
+                        if (s.channel, s.post_id, s.side, s.zone_lo) not in known:
+                            self.signals.append(s); known.add((s.channel, s.post_id, s.side, s.zone_lo)); new += 1
+                self.errors.pop(ch, None)
+            except Exception as e:  # noqa: BLE001 — network / layout problems must never stop trading
+                self.errors[ch] = str(e)[:120]
+        if new:
+            self.signals = self.signals[-2000:]
+            self.path.write_text(json.dumps([asdict(s) for s in self.signals], ensure_ascii=False), encoding="utf-8")
+        return new
+
+    def regrade(self, bars: pd.DataFrame, spread: float, atr: pd.Series | None = None) -> None:
+        """Grade every signal whose outcome is decidable with the bars we have (live M1 history)."""
+        if bars is None or bars.empty:
+            return
+        done = set(zip(self.graded.get("channel", []), self.graded.get("post_id", []), self.graded.get("side", []),
+                       self.graded.get("zone_lo", []))) if not self.graded.empty else set()
+        horizon = bars.index[-1] - pd.Timedelta(hours=12)
+        todo = [s for s in self.signals if (s.channel, s.post_id, s.side, s.zone_lo) not in done
+                and pd.Timestamp(s.time) < horizon and pd.Timestamp(s.time) >= bars.index[0]]
+        if todo:
+            g = grade(todo, bars, spread, atr)
+            self.graded = pd.concat([self.graded, g], ignore_index=True) if not self.graded.empty else g
+            self.graded.to_csv(self.folder / "graded.csv", index=False)
+
+    def stats(self) -> dict:
+        return channel_stats(self.graded, self.min_graded)
+
+    def active(self, now: pd.Timestamp, valid_h: float = 4.0) -> list[Signal]:
+        lo = now - pd.Timedelta(hours=valid_h)
+        return [s for s in self.signals if lo < pd.Timestamp(s.time) <= now]
