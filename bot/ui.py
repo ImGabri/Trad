@@ -169,14 +169,15 @@ STYLES["extreme"] = {"strategy": {"mode": "basket"}, "risk": {"max_daily_trades"
                      "sessions": {"asia_enabled": True},
                      "basket": dict(BASKET_DEFAULT, candles_tf="m1", candles=2, follow=True, step_atr=0.3, max_entries=1,
                                     tp_atr=0.5, sl_atr=1.0, hold_minutes=15)}
-# 💀 Hyper: a new standalone trade EVERY minute in the direction of the last M1 candle (falling → SELL, rising → BUY),
-# up to 10 open, each with its own 0.25×ATR target / 1×ATR stop and a 15-min clock. Backtest: ~1,200 trades/day,
-# 48–69 % won, −$0.41 to −0.45 per 0.01-lot
-# trade → a €100 account is gone within the first trading day in every period (2020–26). Demo only.
+# 💀 Hyper (v2.10, directional): every minute, if the last M1 candle went AGAINST the hourly trend (H1 EMA20/50),
+# trade WITH the trend (buy dips in an uptrend, sell rallies in a downtrend); up to 3 open, each with its own
+# 2×ATR target / 0.5×ATR stop and a 60-min clock. Least-losing of 576 directional variants with 100+ trades/day:
+# ~360 trades/day, −$0.30 to −0.37 per 0.01-lot trade (old Hyper −$0.41 to −0.45); €200 still blown in every
+# period 2020–26 — no fast variant beat the spread. Demo only.
 STYLES["hyper"] = {"strategy": {"mode": "basket"}, "risk": {"max_daily_trades": 100000},
                    "sessions": {"asia_enabled": True},
-                   "basket": dict(BASKET_DEFAULT, candles_tf="m1", candles=1, follow=True, independent=True, max_open=10,
-                                  tp_atr=0.25, sl_atr=1.0, hold_minutes=15, equity_per_001=1000)}
+                   "basket": dict(BASKET_DEFAULT, candles_tf="m1", candles=1, follow=True, independent=True, max_open=3,
+                                  trend="h1", entry="dip", tp_atr=2.0, sl_atr=0.5, hold_minutes=60, equity_per_001=1000)}
 for _k in ("active", "careful"):  # leaving Turbo/Basket restores the scalping engine
     STYLES[_k].setdefault("strategy", {}).update(mode="scalp", ai_gate=True)
 
@@ -371,7 +372,7 @@ def action(name: str, body: dict) -> str:
                "perfect": "🎯 Perfect: the best backtested strategy (hourly trend breakouts, 1 % risk). Use €100+.",
                "extreme": "☠️ Extreme: ~85 trades a day, buys AND sells with the last 2 candles. Lost money in every backtest period.",
                "both": "🎯⇅ Perfect + Sell: hourly breakouts up AND down (buys in uptrends, sells in downtrends). Use €500+.",
-               "hyper": "💀 Hyper: a trade every minute with the last candle (buys and sells), up to 10 open (~1,200 a day). Blew €100 within a day in every backtest.",
+               "hyper": "💀 Hyper: trades every dip WITH the hourly trend (buys in uptrends, sells in downtrends), up to 3 open (~360 a day). Still lost in every backtest (≈ −$120 a day at 0.01 lot).",
                "basket": "🧺 Basket: follows the last candles and adds legs; whole basket closes together (lost money in backtests)."}
         return msg[style] + _restart_if_running()
     if name == "test_trade":

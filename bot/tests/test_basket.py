@@ -133,3 +133,20 @@ def test_reset_clears_daily_halt_and_stops_while_running(tmp_path):
     r.run()
     assert seen["after"] == (False, False, False, 0)
     assert not (tmp_path / "data" / "RESET").exists()
+
+
+def test_directional_hyper_only_trades_with_hourly_trend():
+    from config import load_config
+    from strategy import basket_signal, closed_trend
+    m1 = synthetic_m1(days=20, seed=9)
+    cfg = load_config(ROOT / "config.yaml", use_tuned=False, overrides={"basket": {
+        "candles_tf": "m1", "candles": 1, "trend": "h1", "entry": "dip"}})
+    s = basket_signal(m1, cfg)
+    t = closed_trend(m1, 60, 20, 50)
+    body = np.sign(m1["close"] - m1["open"]).to_numpy()
+    nz = s.to_numpy() != 0
+    assert nz.sum() > 50
+    assert (s.to_numpy()[nz] == t[nz]).all()           # always with the trend …
+    assert (body[nz] == -t[nz]).all()                  # … after a candle against it (the dip)
+    cut = len(m1) // 2
+    assert basket_signal(m1.iloc[:cut], cfg).equals(s.iloc[:cut])   # no look-ahead

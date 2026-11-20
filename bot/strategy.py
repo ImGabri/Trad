@@ -196,7 +196,22 @@ def basket_signal(f: pd.DataFrame, cfg) -> pd.Series:
         al = pd.merge_asof(pd.DataFrame(index=idx + pd.Timedelta(minutes=1)), s5.rename("v").to_frame(),
                            left_index=True, right_index=True, direction="backward")["v"].fillna(0).to_numpy()
         s = pd.Series(np.where((idx.minute % 5) == 4, al, 0), index=idx)
+    tr = str(getattr(b, "trend", "") or "").lower()
+    if tr in ("m15", "h1"):  # directional: only trade WITH the closed-bar trend
+        t = closed_trend(f, 15 if tr == "m15" else 60, *((50, 200) if tr == "m15" else (20, 50)))
+        want = -t if str(getattr(b, "entry", "follow")).lower() == "dip" else t   # dip: candle against the trend
+        return pd.Series(np.where((s.to_numpy() == want) & (t != 0), t, 0), index=idx).astype(int)
     return (s * (1 if getattr(b, "follow", True) else -1)).astype(int)
+
+
+def closed_trend(f: pd.DataFrame, tf_min: int, fast: int, slow: int) -> np.ndarray:
+    """+1 / −1 / 0 = EMA(fast) vs EMA(slow) on CLOSED tf_min-minute bars, aligned to each M1 bar's close."""
+    c = f["close"].resample(f"{tf_min}min", label="left", closed="left").last().dropna()
+    t = np.sign(c.ewm(span=fast, adjust=False, min_periods=slow).mean() - c.ewm(span=slow, adjust=False, min_periods=slow).mean())
+    t.index = t.index + pd.Timedelta(minutes=tf_min)
+    a = pd.merge_asof(pd.DataFrame(index=f.index + pd.Timedelta(minutes=1)), t.rename("t").to_frame(),
+                      left_index=True, right_index=True, direction="backward")["t"]
+    return a.fillna(0).to_numpy()
 
 
 def compute_signals(f: pd.DataFrame, cfg, events: pd.DatetimeIndex | None = None) -> pd.DataFrame:

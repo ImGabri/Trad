@@ -3,6 +3,17 @@
 A self-learning gold scalper with a one-click dashboard. It trades XAUUSD on your PU Prime MT5 demo, runs in
 the background, restarts at every Windows logon and retrains itself every weekend on everything it has collected.
 
+## v2.10 — directional 💀 Hyper
+
+- **What changed:** Hyper now only trades **with the hourly trend**. In an uptrend it buys when a 1-minute candle
+  dips, and in a downtrend it sells when one rises. Up to 3 trades are open at once (about 360 a day). Each trade
+  has a 2 × ATR target, a 0.5 × ATR stop and a 60-minute limit.
+- **Why:** on 20 Nov the old Hyper bought while the hourly trend and the headlines pointed down. The new version
+  would only have sold that night.
+- **Backtest (576 directional variants, 2020–2026):** none made money. The fast ones lose about $0.30–$0.37 per
+  0.01-lot trade (the old Hyper lost $0.41–$0.45). That is roughly −$120 a day, so €200 was still blown in every
+  period. The spread ($0.32 a trade) is bigger than any edge found in 1-minute candles.
+
 ## Start (3 steps)
 
 1. Install **PU Prime MT5**, log in to your **demo** account with **Save password** ticked, and click
