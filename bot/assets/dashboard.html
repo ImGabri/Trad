@@ -373,7 +373,9 @@ if(job.running&&/setup|Retrain/i.test(job.name)){head="Training the AI…";sub=j
 else if(bg.background==="on"){const m=bg.mode==="demo"?"Trading your demo":"Watching (no orders)";
  if(bg.worker==="running"){head=m;sub=w.detail?w.detail:"Scanning every closed minute of gold.";pill=["Live",w.detail?"warn":"ok"]}
  else if(w.state==="retrain"){head="Weekend retrain";sub="Learning from this week's data while gold is closed.";pill=["Training","warn"]}
- else{head="Starting…";sub=bg.detail||w.detail||"Connecting to MT5…";pill=["Starting","warn"]}}
+ else{head="Starting…";sub=bg.detail||w.detail||"Connecting to MT5…";pill=["Starting","warn"];
+  if(bg.worker==="no heartbeat")sub="The background bot is not answering (no heartbeat). Make sure MT5 is open and logged in, then press STOP and START."+((s.worker_log||[]).length?" Last log: "+s.worker_log.slice(0,3).join("  ·  "):"");
+  else if(w.state==="waiting"&&(s.worker_log||[]).length)sub=(bg.detail||w.detail||"")+"  ·  Last log: "+s.worker_log.slice(0,2).join("  ·  ")}}
 if(s.stop_file||w.state==="killed"){head="Halted by kill switch";sub="Press “🔄 Reset daily limits & stops”, then START.";pill=["Halted","bad"]}
 if(smallTurbo)sub+=" ⚠ Under €100: each 0.01-lot trade risks a big part of the account (backtests: €50 blown in 2 of 3 periods, €100+ profitable in all).";
 $("headline").textContent=head;$("subline").textContent=sub;$("pillTxt").textContent=pill[0];$("pill").className="pill "+pill[1];

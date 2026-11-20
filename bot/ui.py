@@ -259,8 +259,32 @@ def state() -> dict:
         mt5_login=env.get("MT5_LOGIN", ""), mt5_server=env.get("MT5_SERVER", ""),
         stop_file=(DATA / "STOP").exists(), settings=_user_settings(),
         check=_read_json(DATA / "mt5_check.json"), style=_style(),
-        trades=_trades()[0], curve=_trades()[1],
+        trades=_trades()[0], curve=_trades()[1], worker_log=_worker_log(),
     )
+
+
+def _worker_log(n: int = 6) -> list[str]:
+    """Last log lines of the background worker (shown on the dashboard while it is not running)."""
+    out = []
+    crash = DATA / "logs" / "worker_crash.txt"
+    if crash.exists() and time.time() - crash.stat().st_mtime < 3600:
+        out += crash.read_text(encoding="utf-8", errors="replace").strip().splitlines()[-4:]
+    p = DATA / "logs" / "bot.jsonl"
+    try:
+        lines = p.read_text(encoding="utf-8", errors="replace").splitlines()[-200:]
+    except OSError:
+        return out
+    for ln in lines[::-1]:
+        try:
+            r = json.loads(ln)
+        except ValueError:
+            continue
+        exc = (r.get("exc") or "").strip().splitlines()
+        out.append((f"{str(r.get('ts', ''))[5:16].replace('T', ' ')} {r.get('level', '')} {r.get('msg', '')}"
+                    + (f" | {exc[-1]}" if exc else ""))[:240])
+        if len(out) >= n:
+            break
+    return out[:n]
 
 
 # -------------------------------------------------------------------------------- actions

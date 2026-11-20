@@ -417,7 +417,19 @@ def cli():
         import ui
         return ui.serve()
     if a.cmd == "worker":
-        return worker()
+        try:
+            return worker()
+        except BaseException as e:  # pythonw has no console: keep the reason where the dashboard can show it
+            import traceback
+            (DATA / "logs").mkdir(parents=True, exist_ok=True)
+            (DATA / "logs" / "worker_crash.txt").write_text(
+                time.strftime("%Y-%m-%d %H:%M:%S ") + "worker crashed:\n" + traceback.format_exc(), encoding="utf-8")
+            try:
+                from monitor import Status
+                Status(DATA / "status.json").update(state="waiting", detail=f"Worker crashed: {e!r} — see Logs")
+            except Exception:  # noqa: BLE001
+                pass
+            raise
     if a.cmd == "smoke":
         return smoke()
     if a.cmd == "reset":

@@ -106,9 +106,15 @@ class Runner:
     # ------------------------------------------------------------------ main
     def run(self):
         cfg = self.cfg
+        t_start = time.time()
+        stage = lambda txt: self.status.update(state="starting", mode=self.mode,  # noqa: E731
+                                               detail=f"{txt} ({int(time.time() - t_start)} s)")
+        stage("Connecting to MT5…")
         self.conn = MT5Connection(cfg)
         if not self.conn.connect():
-            raise RuntimeError(f"Cannot connect to MT5 ({mt5.last_error()}). Open the PUPrime terminal and log in.")
+            raise RuntimeError(self.conn.last_error or
+                               f"Cannot connect to MT5 ({mt5.last_error()}). Open the PUPrime terminal and log in.")
+        stage("Connected — checking the account…")
         acc = mt5.account_info()
         if self.mode == "demo" and acc.trade_mode != mt5.ACCOUNT_TRADE_MODE_DEMO:
             raise RuntimeError("This MT5 account is not a demo account — demo mode refuses to trade it.")
@@ -117,10 +123,12 @@ class Runner:
         if self.mode == "demo" and getattr(mt5.terminal_info(), "tradeapi_disabled", False):
             raise RuntimeError("MT5 Options > Expert Advisors: clear Disable automated trading via external Python API.")
         remember_terminal(self.data_dir)
+        stage("Finding gold and the related markets…")
         self.gold = self.conn.resolve_gold(cfg.symbols.primary)
         self.acct_usd = acct_per_usd(self.gold)
         suffix = self.gold[len(cfg.symbols.primary):]
         self.corr = self.conn.resolve_context(cfg, suffix)
+        stage(f"Found {self.gold} and {sum(1 for v in self.corr.values() if v)} related markets — starting…")
         self.info = mt5.symbol_info(self.gold)
         self.dev_points = int(cfg.risk.max_slippage_pips * cfg.instrument.pip_size / self.info.point)
         # restore day counters if same UTC day
