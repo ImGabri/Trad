@@ -178,7 +178,9 @@ STYLES["hypermax"] = {"strategy": {"mode": "turbo", "turbo_lookbacks": [12, 24, 
 # 🎯🔥⚡ Hyper Max 5: Hyper Max with up to 5 trades open (~1.9 a day). The only faster variant (of 21 tested: extra 1–6 h
 # channels, M15 channels, Hyper dip entries, 3/5/8 open) still profitable in every period at €200 AND €1,000:
 # €200 +197 / +1,303 / +1,317 % (dd −70 / −35 / −54); €1,000 +142 / +788 / +325 % (dd −85 / −35 / −41).
-STYLES["hypermax5"] = {"strategy": dict(STYLES["hypermax"]["strategy"]),
+# v2.17: exits re-optimised on 2019–25 only (28 exit/risk variants): a 24 h time stop instead of 15 h beat it at both sizes
+# in 2019–23 and 2024–25; unseen Aug 2025–Nov 2026: €200 +1,046 % (was +1,317 %), €1,000 +352 % (was +325 %).
+STYLES["hypermax5"] = {"strategy": dict(STYLES["hypermax"]["strategy"], time_stop_minutes=1440),
                        "risk": dict(STYLES["hypermax"]["risk"], max_concurrent=5)}
 STYLES["both"] = {"strategy": {"mode": "turbo", "turbo_direction": "both"}}
 BASKET_DEFAULT = {"candles_tf": "m5", "candles": 5, "follow": True, "step_atr": 0.75, "max_entries": 2, "tp_atr": 1.0,
@@ -421,7 +423,7 @@ def action(name: str, body: dict) -> str:
                "turbo": "🎯 Perfect: the best backtested strategy (hourly trend breakouts, 1 % risk). Use €100+.",
                "perfect": "🎯 Perfect: the best backtested strategy (hourly trend breakouts, 1 % risk). Use €100+.",
                "extreme": "☠️ Extreme: ~85 trades a day, buys AND sells with the last 2 candles. Lost money in every backtest period.",
-               "hypermax5": "🎯🔥⚡ Hyper Max 5: Hyper Max with up to 5 trades open (~1.9 a day). Bigger swings (backtest drawdowns up to −85 %).",
+               "hypermax5": "🎯🔥⚡ Hyper Max 5: Hyper Max with up to 5 trades open (~1.9 a day), trades held up to 24 h. Bigger swings (backtest drawdowns up to −88 %).",
                "hypermax": "🎯🔥 Hyper Max: Hyper + H4 plus 20-day, previous-day and previous-week breakouts (~1.6 trades a day). Best backtest of all styles.",
                "hyperh4": "🎯🐂 Hyper Perfect + H4 trend: 12/24/48 h breakouts, only while the 4-hour chart is bullish. Profitable in every backtest period at €200 and €1,000.",
                "hyperperfect": "🎯⚡ Hyper Perfect: breakouts on 12/24/48 h at once, up to 3 trades (~2 a day). Profitable in every backtest period from €200, with big swings.",

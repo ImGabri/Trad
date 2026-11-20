@@ -10,6 +10,7 @@ from typing import Any
 import yaml
 
 DEFAULT_PATH = Path(__file__).with_name("config.yaml")
+TURBO_USER_STRATEGY_KEYS = {"time_stop_minutes", "skip_market_open_check"}
 
 
 def _ns(obj: Any) -> Any:
@@ -50,7 +51,13 @@ def load_config(path: str | Path | None = None, overrides: dict | None = None, u
     if str(raw.get("strategy", {}).get("mode", "scalp")).lower() == "turbo" and isinstance(raw.get("turbo"), dict):
         _deep_update(raw, copy.deepcopy(raw["turbo"]))  # Turbo's own exits / risk (config.yaml `turbo:` section)
         if user.exists():  # explicit dashboard settings still win
-            _deep_update(raw, {k: v for k, v in (yaml.safe_load(user.read_text()) or {}).items() if k != "strategy"})
+            u = yaml.safe_load(user.read_text()) or {}
+            _deep_update(raw, {k: v for k, v in u.items() if k != "strategy"})
+            # style presets may set their own tested hold time (e.g. Hyper Max 5: 24 h); other user strategy keys
+            # (scalping exits, equity-% take profit) must not override Turbo's tested exits
+            keep = {k: v for k, v in (u.get("strategy") or {}).items() if k in TURBO_USER_STRATEGY_KEYS}
+            if keep:
+                _deep_update(raw, {"strategy": keep})
     local = data_dir / "local.json"  # machine-specific: MT5 terminal path remembered at first connect
     if not raw["broker"].get("terminal_path") and local.exists():
         import json

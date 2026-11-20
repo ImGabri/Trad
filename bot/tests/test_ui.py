@@ -88,5 +88,6 @@ def test_style_presets_are_complete_and_detected(tmp_path, monkeypatch):
             assert cfg.strategy.turbo_regime == "h4" and cfg.risk.max_concurrent == 3
         if style == "hypermax5":
             assert cfg.risk.max_concurrent == 5 and list(cfg.strategy.turbo_extras) == ["turtle20", "prevday", "prevweek"]
+            assert cfg.strategy.time_stop_minutes == 1440
         if style == "hypermax":
             assert list(cfg.strategy.turbo_extras) == ["turtle20", "prevday", "prevweek"] and cfg.risk.max_concurrent == 3
