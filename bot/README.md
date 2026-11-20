@@ -3,6 +3,28 @@
 A self-learning gold scalper with a one-click dashboard. It trades XAUUSD on your PU Prime MT5 demo, runs in
 the background, restarts at every Windows logon and retrains itself every weekend on everything it has collected.
 
+## v2.19 — 🔮🛡 Predict Max 5 Safe
+
+**What it is:** Hyper Max 5 and Predict Max 5 at the same time, made safe. Both take the same trades, so "both at
+once" means one trade sized **2.5 ×** risk when the AI agrees and **1.5 ×** when it does not.
+
+**How it was chosen:** out of 81 risk / stop / target setups across the three sets, picked on 2019–25 only.
+- **Base risk:** 0.5 %.
+- **Stop:** 4 × ATR, wider than the usual 3 × ATR.
+- **Target:** 40 × ATR.
+- **Holding time:** up to 24 h.
+
+Checked end to end through the app's own code, with out-of-sample AI predictions:
+
+| Style | €200: 2019–23 / 2024–25 / Aug 25–Jul 26 | €1,000: same | Worst drop (2025–26) |
+|---|---|---|---|
+| 🔮🛡 **Predict Max 5 Safe** | +317 / +1,168 / **+1,220 %** | +332 / +554 / +309 % | −78 % (**−43 %**) |
+| 🔮 Predict Max 5 | +300 / +1,958 / +797 % | +332 / +910 / +470 % | −78 % (−70 %) |
+| "Both" at 1 % risk (not offered) | +200 / +6,663 / +1,309 % | +238 / +3,685 / +693 % | **−98 %** (−88 %) |
+
+**Fix:** style presets may now set their own stop and target in Perfect/Hyper modes. Before this, they were
+replaced by the default 3 / 40 × ATR.
+
 ## v2.18 — 🔮 Predict Max 5
 
 **What it is:** Hyper Max 5's trades, with the AI's prediction of the next 25 minutes setting the size. It risks

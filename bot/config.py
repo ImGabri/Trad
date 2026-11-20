@@ -10,7 +10,7 @@ from typing import Any
 import yaml
 
 DEFAULT_PATH = Path(__file__).with_name("config.yaml")
-TURBO_USER_STRATEGY_KEYS = {"time_stop_minutes", "skip_market_open_check"}
+TURBO_USER_STRATEGY_KEYS = {"time_stop_minutes", "sl_atr", "tp_atr", "skip_market_open_check"}  # style-preset exits
 
 
 def _ns(obj: Any) -> Any:

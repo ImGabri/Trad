@@ -189,6 +189,12 @@ STYLES["hypermax5"] = {"strategy": dict(STYLES["hypermax"]["strategy"], time_sto
 STYLES["predictmax5"] = {"strategy": dict(STYLES["hypermax5"]["strategy"]),
                          "risk": dict(STYLES["hypermax5"]["risk"],
                                       conf_sizing={"enabled": True, "sure_above": 0.5, "sure_mult": 1.5, "unsure_mult": 0.5})}
+# 🔮🛡 Predict Max 5 Safe: "Hyper Max 5 + Predict Max 5 at the same time" made safe — the same entries, AI sizing 2.5 × risk
+# when it agrees / 1.5 × when not, on a 0.5 % base, SL 4×ATR, TP 40×ATR, 24 h. Best "both" setting of 81 risk/SL/TP setups
+# (picked on 2019–25): €200 +317 / +1,168 / +1,220 %, €1,000 +335 / +493 / +292 %; worst drawdown −78 % (−43 % 2025–26).
+STYLES["predictsafe"] = {"strategy": dict(STYLES["hypermax5"]["strategy"], sl_atr=4.0, tp_atr=40.0),
+                         "risk": dict(STYLES["hypermax5"]["risk"], risk_per_trade_pct=0.5,
+                                      conf_sizing={"enabled": True, "sure_above": 0.5, "sure_mult": 2.5, "unsure_mult": 1.5})}
 STYLES["both"] = {"strategy": {"mode": "turbo", "turbo_direction": "both"}}
 BASKET_DEFAULT = {"candles_tf": "m5", "candles": 5, "follow": True, "step_atr": 0.75, "max_entries": 2, "tp_atr": 1.0,
                   "sl_atr": 6.0, "hold_minutes": 240, "equity_per_001": 50}
@@ -245,7 +251,9 @@ def _style() -> str:
                 rk = load_config(APP / "config.yaml").risk
                 if int(rk.max_concurrent) >= 5:
                     cs = getattr(rk, "conf_sizing", None)
-                    return "predictmax5" if cs is not None and getattr(cs, "enabled", False) else "hypermax5"
+                    if cs is not None and getattr(cs, "enabled", False):
+                        return "predictsafe" if float(getattr(cs, "sure_mult", 1.5)) >= 2.0 else "predictmax5"
+                    return "hypermax5"
                 return "hypermax"
             return "hyperh4" if str(getattr(st, "turbo_regime", "") or "") == "h4" else "hyperperfect"
         return "both" if str(getattr(st, "turbo_direction", "long")) == "both" else "turbo"
@@ -434,6 +442,7 @@ def action(name: str, body: dict) -> str:
                "turbo": "🎯 Perfect: the best backtested strategy (hourly trend breakouts, 1 % risk). Use €100+.",
                "perfect": "🎯 Perfect: the best backtested strategy (hourly trend breakouts, 1 % risk). Use €100+.",
                "extreme": "☠️ Extreme: ~85 trades a day, buys AND sells with the last 2 candles. Lost money in every backtest period.",
+               "predictsafe": "🔮🛡 Predict Max 5 Safe: both Hyper Max 5 and Predict Max 5 at once, at half risk with a wider stop. Worst backtest drop −78 % (−43 % in 2025–26).",
                "predictmax5": "🔮 Predict Max 5: Hyper Max 5 trades with the AI's prediction setting the size (1.5× when it agrees, 0.5× when not).",
                "hypermax5": "🎯🔥⚡ Hyper Max 5: Hyper Max with up to 5 trades open (~1.9 a day), trades held up to 24 h. Bigger swings (backtest drawdowns up to −88 %).",
                "hypermax": "🎯🔥 Hyper Max: Hyper + H4 plus 20-day, previous-day and previous-week breakouts (~1.6 trades a day). Best backtest of all styles.",
