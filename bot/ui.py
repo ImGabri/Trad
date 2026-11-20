@@ -158,6 +158,11 @@ STYLES = {  # one click instead of editing numbers
 STYLES["perfect"] = STYLES["turbo"]  # 🎯 Perfect = best backtested strategy (improved Turbo, config `turbo:` section)
 # 🎯⇅ Perfect + Sell: the same breakout, plus SELLS on a break below the 24-hour low while the hourly trend is down.
 # Backtest (€100, 1 %): 2019–23 BLOWN (−94 %), 2024–mid-25 +565 %, Aug 2025–Nov 2026 +915 %; €500: −31 / +179 / +191 %.
+# 🎯⚡ Hyper Perfect: Perfect's breakout on 12 h, 24 h AND 48 h channels at once, up to 3 trades open (~1.6–1.8 trades
+# a day, 3× Perfect). Backtest €200 at 1 %: 2019–23 +116 %, 2024–mid-25 +1,138 %, Aug 2025–Nov 2026 +602 %, but drawdowns
+# up to −83 %; €1,000: −18 % / +522 % / +64 %. Flat 1 % (no confidence sizing) exactly as tested.
+STYLES["hyperperfect"] = {"strategy": {"mode": "turbo", "turbo_lookbacks": [12, 24, 48]},
+                          "risk": {"max_concurrent": 3, "max_daily_trades": 100, "conf_sizing": {"enabled": False}}}
 STYLES["both"] = {"strategy": {"mode": "turbo", "turbo_direction": "both"}}
 BASKET_DEFAULT = {"candles_tf": "m5", "candles": 5, "follow": True, "step_atr": 0.75, "max_entries": 2, "tp_atr": 1.0,
                   "sl_atr": 6.0, "hold_minutes": 240, "equity_per_001": 50}
@@ -209,6 +214,8 @@ def _style() -> str:
     from config import load_config
     st = load_config(APP / "config.yaml").strategy
     if str(getattr(st, "mode", "scalp")) == "turbo":
+        if len(getattr(st, "turbo_lookbacks", None) or [24]) > 1:
+            return "hyperperfect"
         return "both" if str(getattr(st, "turbo_direction", "long")) == "both" else "turbo"
     if str(getattr(st, "mode", "scalp")) == "basket":
         b = load_config(APP / "config.yaml").basket
@@ -371,6 +378,7 @@ def action(name: str, body: dict) -> str:
                "turbo": "🎯 Perfect: the best backtested strategy (hourly trend breakouts, 1 % risk). Use €100+.",
                "perfect": "🎯 Perfect: the best backtested strategy (hourly trend breakouts, 1 % risk). Use €100+.",
                "extreme": "☠️ Extreme: ~85 trades a day, buys AND sells with the last 2 candles. Lost money in every backtest period.",
+               "hyperperfect": "🎯⚡ Hyper Perfect: breakouts on 12/24/48 h at once, up to 3 trades (~2 a day). Profitable in every backtest period from €200, with big swings.",
                "both": "🎯⇅ Perfect + Sell: hourly breakouts up AND down (buys in uptrends, sells in downtrends). Use €500+.",
                "hyper": "💀 Hyper: trades every dip WITH the hourly trend (buys in uptrends, sells in downtrends), up to 3 open (~360 a day). Still lost in every backtest (≈ −$120 a day at 0.01 lot).",
                "basket": "🧺 Basket: follows the last candles and adds legs; whole basket closes together (lost money in backtests)."}

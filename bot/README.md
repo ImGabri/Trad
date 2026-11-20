@@ -3,6 +3,27 @@
 A self-learning gold scalper with a one-click dashboard. It trades XAUUSD on your PU Prime MT5 demo, runs in
 the background, restarts at every Windows logon and retrains itself every weekend on everything it has collected.
 
+## v2.13 — 🎯⚡ Hyper Perfect (faster Perfect that still made money)
+
+- **How it trades:** the same breakout as Perfect, but it watches the **12-hour, 24-hour and 48-hour** highs at once
+  and can hold **up to 3 trades**. That is about 1.6–1.8 trades a day, roughly 3 × Perfect.
+- **Why this one:** it was the best of 6 tested combinations.
+- **Backtest (bot engine, real Standard costs, 1 % risk):**
+
+  | Start | 2019 – 23 | 2024 – mid-25 | Aug 2025 – Nov 2026 |
+  |---|---|---|---|
+  | €200 Hyper Perfect | +116 % (dd −65 %) | **+1,138 %** (dd −53 %) | **+602 %** (dd −83 %) |
+  | €200 Perfect | +64 % (dd −62 %) | +318 % (dd −26 %) | +265 % (dd −34 %) |
+  | €1,000 Hyper Perfect | −18 % (dd −82 %) | +522 % | +64 % |
+  | €1,000 Perfect | +41 % | +153 % | +22 % |
+
+  - **Small accounts:** from €200 it was profitable in every period.
+  - **Swings:** it has much bigger swings. It dropped −83 % before recovering in 2025–26.
+  - **At €1,000:** it lost in 2019–23, because 3 open trades at full 1 % risk is a lot when the market chops.
+  - **Unchanged:** it only buys, like Perfect.
+- **Other combinations tested:** adding 6-hour channels, sells or 15-minute channels made it faster but **blew
+  €200** in 2019–23.
+
 ## v2.12 — 🧠 trade memory: learns from its own wins and losses while trading
 
 **How it learns:** after every closed trade, the bot files the result under its situation: BUY or SELL × session

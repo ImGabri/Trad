@@ -224,7 +224,12 @@ def compute_signals(f: pd.DataFrame, cfg, events: pd.DatetimeIndex | None = None
                                   out["bias"], 0)
     mode = str(getattr(cfg.strategy, "mode", "scalp")).lower()
     if mode == "turbo":
-        out["rule_signal"] = turbo_signal(f, direction=str(getattr(cfg.strategy, "turbo_direction", "long")))
+        d = str(getattr(cfg.strategy, "turbo_direction", "long"))
+        sig = None
+        for lb in (getattr(cfg.strategy, "turbo_lookbacks", None) or [24]):   # ⚡ Hyper Perfect: 12 + 24 + 48 h
+            z = turbo_signal(f, lookback_h=int(lb), direction=d)
+            sig = z if sig is None else sig.where(sig != 0, z)
+        out["rule_signal"] = sig
     elif mode == "basket":
         out["rule_signal"] = basket_signal(f, cfg)
     out = out.join(session_state(f.index, cfg)).join(news_phase(f.index, events, cfg))
