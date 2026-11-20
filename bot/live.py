@@ -215,8 +215,13 @@ class Runner:
             return None
         recent = [dict(channel=x.channel, time=x.time[:16].replace("T", " "), side="BUY" if x.side > 0 else "SELL",
                        zone=f"{x.zone_lo:.2f}–{x.zone_hi:.2f}", target=x.target, kind=x.kind) for x in self.sbook.signals[-6:][::-1]]
+        learn = {}
+        for ch in self.sbook.channels:
+            e, n = self.sbook.learner.expect(ch, 1)
+            e2, _ = self.sbook.learner.expect(ch, -1)
+            learn[ch] = dict(buy=round(e, 2), sell=round(e2, 2), n=n)
         return dict(channels=self.sbook.channels, stats=self.sbook.stats(), errors=self.sbook.errors, recent=recent,
-                    min_graded=self.sbook.min_graded)
+                    min_graded=self.sbook.min_graded, learn=learn)
 
     def _today_stats(self) -> dict:
         day = datetime.now(timezone.utc).date().isoformat()
@@ -467,10 +472,12 @@ class Runner:
         self.last_feat = row
         if self.sbook is not None:
             try:
-                hr = str(m1.index[-1].floor("60min"))
-                if self.state.get("signals_graded_at") != hr:   # grade the channels once an hour on real prices
+                hr = str(m1.index[-1].floor("15min"))
+                if self.state.get("signals_graded_at") != hr:   # grade + retrain every 15 min on real prices
+                    from strategy import closed_trend
+                    h4s = pd.Series(f["h4_regime"].to_numpy() if "h4_regime" in f else closed_trend(f, 240, 20, 50), index=f.index)
                     with self._sig_lock:
-                        self.sbook.regrade(m1, float(getattr(cfg.backtest, "spread_cost", 0.32)), f["m5_atr"])
+                        self.sbook.regrade(m1, float(getattr(cfg.backtest, "spread_cost", 0.32)), f["m5_atr"], h4s)
                     self.state["signals_graded_at"] = hr
                 self._signal_step(m1=m1, row=row)
             except Exception:  # noqa: BLE001
@@ -635,11 +642,13 @@ class Runner:
             key = f"{sg.channel}:{sg.post_id}:{sg.side}:{sg.zone_lo}"
             if key in done or open_sig >= int(getattr(sc, "max_open", 2)):
                 continue
-            st = stats.get(sg.channel)
-            if st and st["traded"] >= self.sbook.min_graded and not st["follow"]:
-                continue                                     # muted: this channel's signals lost money after costs
-            if getattr(sc, "require_h4", False) and self.last_feat is not None and \
-                    int(np.sign(float(self.last_feat.get("h4_regime", 0) or 0))) not in (0, sg.side):
+            h4v = int(np.sign(float(self.last_feat.get("h4_regime", 0) or 0))) if self.last_feat is not None else 0
+            if getattr(sc, "require_h4", False) and h4v not in (0, sg.side):
+                continue
+            take, size_mult, exp_usd, n_gr, why = self.sbook.learner.decide(sg.channel, sg.side, None if h4v == 0 else h4v == sg.side)
+            if not take:
+                done.add(key)
+                log.info("signal %s skipped by the learner: %s", key, why)
                 continue
             px = tick.ask if sg.side > 0 else tick.bid
             if sg.kind == "order" and immediate:
@@ -660,7 +669,7 @@ class Runner:
             if sl_d <= 0 or tp_d <= 0:
                 continue
             lots = position_size(acc.equity / self.acct_usd, sl_d, self.info.trade_contract_size,
-                                 float(getattr(sc, "risk_pct", 0.5)), self.info.volume_step, self.info.volume_min,
+                                 float(getattr(sc, "risk_pct", 0.5)) * size_mult, self.info.volume_step, self.info.volume_min,
                                  min(self.info.volume_max, self.cfg.instrument.max_lot), commission_per_side(self.cfg),
                                  getattr(self.cfg.risk, "min_lot_max_risk_pct", 0))
             done.add(key)

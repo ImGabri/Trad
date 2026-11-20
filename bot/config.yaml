@@ -174,13 +174,13 @@ analyst:                     # "what will probably happen next" — see analyst.
 
 signals:                     # 📡 live public Telegram signal channels (dashboard → Signal channels). Read-only web preview.
   enabled: false
-  channels: []               # e.g. [callistofx] — public channel names
+  channels: [Forexstar_Gold, UnitedKingsOfficial, EliteGoldTraders03, AnabelSignals, xauusd_signals, GoldPrincess, callistofx]
   poll_s: 20                 # check every channel every 20 s
   valid_h: 4                 # a zone post is tradeable for 4 h
   hold_h: 8                  # signal trades are closed after 8 h at the latest
   max_open: 2                # signal trades open at once (on top of the style's own trades)
   risk_pct: 0.5              # risk per signal trade (sized off its stop)
-  min_graded: 20             # mute a channel once ≥ 20 of its signals are graded on real prices and the average lost
+  min_graded: 100            # the signal AI judges a channel after 100 graded signals; it only drops clearly losing ones
   require_h4: false          # true = only take signals in the 4-hour trend's direction
 
 learning:

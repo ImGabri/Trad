@@ -311,7 +311,7 @@ body:not(.ready) #sig:empty{min-height:200px}
   <section class="card s5"><h2><svg class="ico"><use href="#i-pulse"/></svg>Market &amp; last signal</h2><div class="kv" id="sig"></div></section>
 
   <section class="card s12" id="sigCard"><h2><svg class="ico"><use href="#i-pulse"/></svg>📡 Signal channels — live</h2>
-    <p class="muted" style="margin:0 0 10px;font-size:12.5px">Public Telegram channels the bot reads every ~20 s (no login). Order posts (price + SL/TP) are traded at once; zone posts when price taps the zone and an M1 candle confirms. Every signal is graded on real prices with your spread — a channel is muted automatically once 20 of its signals are graded and the average lost. Some signal sellers are on regulator warning lists (e.g. Callisto FX: UK FCA) — demo only.</p>
+    <p class="muted" style="margin:0 0 10px;font-size:12.5px">Public Telegram channels the bot reads every ~20 s (no login). Order posts (price + SL/TP) are traded at once; zone posts when price taps the zone and an M1 candle confirms. Every signal is graded on real prices with your spread and the signal AI retrains on it every 15 min: it learns per channel, buy/sell and 4-hour trend which signals make money after costs, only drops channels that are clearly losing after 100 graded signals and sizes proven ones 1.5×. Some signal sellers are on regulator warning lists (e.g. Callisto FX: UK FCA) — demo only.</p>
     <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
       <input id="sigChannels" placeholder="channel names, e.g. callistofx, another_channel" style="flex:1;min-width:220px">
       <label style="display:flex;align-items:center;gap:6px;font-size:13px">Risk % <input id="sigRisk" type="number" step="0.1" min="0.1" max="2" value="0.5" style="width:70px"></label>
@@ -478,8 +478,9 @@ document.addEventListener("DOMContentLoaded",()=>rankStyles(rankKey));
 function renderSignals(s){const w=s.worker||{},sc=s.signal_cfg||{},sg=w.signals,tb=$("sigStats");if(!tb)return;
  if(!sigLoaded&&sc.channels!==undefined){$("sigChannels").value=(sc.channels||[]).join(", ");$("sigOn").checked=!!sc.enabled;if(sc.risk_pct)$("sigRisk").value=sc.risk_pct;sigLoaded=true}
  if(!sg){return}tb.innerHTML="";(sg.channels||[]).forEach(ch=>{const st=(sg.stats||{})[ch]||{},er=(sg.errors||{})[ch];const tr=document.createElement("tr");
-  const muted=st.traded>=sg.min_graded&&!st.follow;const cells=[ch,st.parsed??0,st.traded??0,st.win==null?"–":st.win+"%",st.avg_usd==null?"–":(st.avg_usd>0?"+":"")+"$"+st.avg_usd,
-   er?"⚠ "+er:muted?"🔇 muted (lost after costs)":st.follow?"✅ following (proven)":"👀 following · grading ("+(st.traded||0)+"/"+sg.min_graded+")"];
+  const L=(sg.learn||{})[ch]||{},best=Math.max(L.buy??-9,L.sell??-9),f=x=>(x>0?"+":"")+"$"+x;
+  const learnTxt=L.n==null?"👀 waiting for signals":L.n<sg.min_graded?"👀 learning ("+L.n+"/"+sg.min_graded+" graded)":best>-1?"✅ taking · AI expects buy "+f(L.buy)+" / sell "+f(L.sell):"🔇 skipping · clearly losing ("+f(L.buy)+" / "+f(L.sell)+")";
+  const cells=[ch,st.parsed??0,st.traded??0,st.win==null?"–":st.win+"%",st.avg_usd==null?"–":(st.avg_usd>0?"+":"")+"$"+st.avg_usd,er?"⚠ "+er:learnTxt];
   cells.forEach((v,i)=>{const td=document.createElement("td");td.textContent=v;if(i===4&&st.avg_usd!=null)td.style.color=st.avg_usd>0?"var(--ok)":"var(--bad)";tr.appendChild(td)});tb.appendChild(tr)});
  $("sigRecent").textContent=(sg.recent||[]).length?"Latest: "+sg.recent.map(r=>r.time+" "+r.channel+" "+r.side+" "+r.zone+(r.target?" → "+r.target:"")).join("  ·  "):"No signals parsed yet."}
 let sigLoaded=false;

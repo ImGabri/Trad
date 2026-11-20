@@ -290,6 +290,59 @@ def channel_stats(graded: pd.DataFrame, min_graded: int = 20) -> dict:
     return out
 
 
+# ---------------------------------------------------------------------------------------------- learning
+class SignalLearner:
+    """Learns from graded signals which ones to take. Expected $ per 0.01 lot after costs is estimated hierarchically
+    (all → channel → channel·side → channel·side·H4-agreement) with shrinkage, so a handful of lucky trades cannot
+    switch a losing channel on. Retrained on every grade (seed history from the backtest + live grades).
+      decide() → (take, size_mult, expected_usd, n, why)"""
+
+    def __init__(self, k: float = 10.0, min_n: int = 100, boost_usd: float = 0.5, skip_below: float = -1.0):
+        # Defaults from a walk-forward test on 352 graded trades of 4 channels (Jul 2025 – Nov 2026): strict filters
+        # (skip at < $0 after 20) cut the result from +$656 to +$38; patient ones (≥ 100 graded, skip only if clearly
+        # losing < −$1) kept +$505. So: follow everything, only drop channels that are clearly bad.
+        self.k, self.min_n, self.boost, self.skip = float(k), int(min_n), float(boost_usd), float(skip_below)
+        self.tab: dict = {}
+        self.n_total = 0
+
+    def fit(self, graded: pd.DataFrame) -> "SignalLearner":
+        self.tab = {}
+        t = graded[graded["traded"].astype(bool)] if graded is not None and len(graded) else pd.DataFrame()
+        self.n_total = len(t)
+        if t.empty:
+            return self
+        h4 = t["h4_ok"].map({True: 1, False: 0, "True": 1, "False": 0}).fillna(-1).astype(int) if "h4_ok" in t else pd.Series(-1, index=t.index)
+        g_mean = float(t["usd"].mean())
+        self.tab[()] = (g_mean, len(t))
+        for keys in (["channel"], ["channel", "side"], ["channel", "side", "h4"]):
+            tt = t.assign(h4=h4)
+            for k, grp in tt.groupby(keys):
+                k = k if isinstance(k, tuple) else (k,)
+                self.tab[tuple(keys) + k] = (float(grp["usd"].sum()), len(grp))
+        return self
+
+    def _level(self, keys: tuple, vals: tuple, prior: float) -> tuple[float, int]:
+        s, n = self.tab.get(keys + vals, (0.0, 0))
+        return (s + self.k * prior) / (n + self.k), n
+
+    def expect(self, channel: str, side: int, h4_ok: bool | None = None) -> tuple[float, int]:
+        g = self.tab.get((), (0.0, 0))[0]
+        e1, n1 = self._level(("channel",), (channel,), g)
+        e2, _ = self._level(("channel", "side"), (channel, int(side)), e1)
+        if h4_ok is None:
+            return e2, n1
+        e3, _ = self._level(("channel", "side", "h4"), (channel, int(side), 1 if h4_ok else 0), e2)
+        return e3, n1
+
+    def decide(self, channel: str, side: int, h4_ok: bool | None = None) -> tuple[bool, float, float, int, str]:
+        e, n = self.expect(channel, side, h4_ok)
+        if n < self.min_n:
+            return True, 1.0, e, n, f"learning ({n}/{self.min_n} graded)"
+        if e < self.skip:
+            return False, 0.0, e, n, f"skipped: clearly losing, expected ${e:+.2f} per 0.01 lot after costs ({n} graded)"
+        return True, (1.5 if e >= self.boost else 1.0), e, n, f"proven: expected ${e:+.2f} ({n} graded)"
+
+
 # ---------------------------------------------------------------------------------------------- live store
 class SignalBook:
     """Live: polls channels, keeps parsed signals + grades in data/signals/, answers 'which zones are active now'."""
@@ -308,11 +361,13 @@ class SignalBook:
             except (ValueError, TypeError):
                 self.signals = []
         gp = self.folder / "graded.csv"
-        if gp.exists():
+        seed = Path(__file__).with_name("assets") / "signals_seed.csv"   # backtest-graded history shipped with the app
+        for f in ((gp,) if gp.exists() else ((seed,) if seed.exists() else ())):
             try:
-                self.graded = pd.read_csv(gp)
+                self.graded = pd.read_csv(f)
             except (ValueError, OSError):
                 pass
+        self.learner = SignalLearner(min_n=self.min_graded).fit(self.graded)  # min_graded: config signals.min_graded
 
     def due(self) -> bool:
         return time.time() - self.last_poll >= self.poll_s
@@ -337,19 +392,22 @@ class SignalBook:
             self.path.write_text(json.dumps([asdict(s) for s in self.signals], ensure_ascii=False), encoding="utf-8")
         return new
 
-    def regrade(self, bars: pd.DataFrame, spread: float, atr: pd.Series | None = None) -> None:
+    def regrade(self, bars: pd.DataFrame, spread: float, atr: pd.Series | None = None, h4: pd.Series | None = None) -> None:
         """Grade every signal whose outcome is decidable with the bars we have (live M1 history)."""
         if bars is None or bars.empty:
             return
         done = set(zip(self.graded.get("channel", []), self.graded.get("post_id", []), self.graded.get("side", []),
                        self.graded.get("zone_lo", []))) if not self.graded.empty else set()
-        horizon = bars.index[-1] - pd.Timedelta(hours=12)
+        horizon = bars.index[-1] - pd.Timedelta(hours=8)
         todo = [s for s in self.signals if (s.channel, s.post_id, s.side, s.zone_lo) not in done
                 and pd.Timestamp(s.time) < horizon and pd.Timestamp(s.time) >= bars.index[0]]
         if todo:
             g = grade(todo, bars, spread, atr)
+            if h4 is not None:
+                g["h4_ok"] = [int(np.sign(h4.asof(pd.Timestamp(t)) or 0)) == sd for t, sd in zip(g.time, g.side)]
             self.graded = pd.concat([self.graded, g], ignore_index=True) if not self.graded.empty else g
             self.graded.to_csv(self.folder / "graded.csv", index=False)
+            self.learner.fit(self.graded)                               # retrain on every new grade
 
     def stats(self) -> dict:
         return channel_stats(self.graded, self.min_graded)
