@@ -3,6 +3,44 @@
 A self-learning gold scalper with a one-click dashboard. It trades XAUUSD on your PU Prime MT5 demo, runs in
 the background, restarts at every Windows logon and retrains itself every weekend on everything it has collected.
 
+## v2.22 — 🔮📡 Signal AI (winner of the €500 tournament)
+
+**The signal-rating AI.** Before trading, it rates every channel signal with a gradient-boosted model, one per lane.
+- **What it reads:** the channel, buy/sell, how far price already is from the posted entry, stop size, posted
+  reward:risk, whether the 1 h and 4 h trends agree, 15 and 60 min momentum, volatility, time of day and week, and
+  the channel's recent record.
+- **What it predicts:** the $ result after costs.
+- **Lanes:** each signal can be traded in two lanes.
+  - **Max:** price ≤ $5 from entry, out after 8 h.
+  - **Hyper:** any distance, out after 24 h.
+- **Rule:** a lane is taken only if the AI expects more than $0.
+- **Training:** it ships trained on 4,015 graded lane trades of 7 channels and keeps retraining on live grades.
+- **Walk-forward check** (trained only on earlier months):
+  - **Signal Max:** +$1,681 instead of +$1,080, on half the trades.
+  - **Signal Hyper:** +$1,627 instead of +$1,468.
+  - **Ranking:** its best-rated 40 % of signals made most of the money.
+
+**The €500 tournament** (Dec 2025 – Nov 2026, the window with walk-forward ratings):
+- **Round 1:** 30 combinations of all styles and signal layers.
+- **Round 2:** optimise the top 5.
+- **Round 3:** combine the winners.
+- **Round 4:** 60 refinements, each checked in both halves.
+
+| €500 | Total | Dec–May | Jun–Nov | Worst drop |
+|---|---|---|---|---|
+| 🔮📡🔥 **Signal AI ×2**: Perfect 1.5 % + AI-rated signals 1 %, 2 × on top-rated | **+4,309 %** | +182 % | +2,755 % | −62 % |
+| 🔮📡 **Signal AI**: Perfect 1 % + AI-rated signals 1 % | +1,171 % | +156 % | +477 % | **−38 %** |
+| AI-rated signals only (no breakouts) | +4,196 % | +157 % | +2,507 % | −62 % |
+| 🎯🔥⚡ Hyper Max 5 alone | +54 % | | | −82 % |
+| 🎯 Perfect alone | +48 % | | | −30 % |
+
+- **Where the profit comes from:** in the last 11 months most of it came from the AI-rated channel signals. Perfect
+  underneath adds a little and keeps the drawdown lower than a Hyper Max base.
+- **Caveats:**
+  - Channel data only covers 2025–26 (one strong gold year).
+  - About 150 combinations were compared, so some of the edge is selection luck.
+  - Channels have no verified records of their own.
+
 ## v2.21 — 📡 live Telegram signals with a learning signal AI
 
 **What it does:** the bot reads public gold signal channels live, about every 20 s, without a login.

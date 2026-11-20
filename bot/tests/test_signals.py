@@ -93,3 +93,55 @@ def test_live_bot_trades_a_posted_order_signal(tmp_path, monkeypatch):
     assert o["type"] == 0 and abs(o["sl"] - (price - 6)) < 1.5 and abs(o["tp"] - (price + 9)) < 1.5
     trades = pd.read_sql_query("SELECT reason_open FROM trades", r.store.conn)
     assert "signal:testch" in trades.reason_open.tolist()
+
+
+def test_signal_ai_rates_each_lane_and_trades_the_approved_ones(tmp_path, monkeypatch):
+    m1 = synthetic_m1(days=40, seed=5)
+    mod = fake_mt5.install(m1, start_bar=20000)
+    for name in ("data", "execution", "live"):
+        if name in sys.modules:
+            importlib.reload(sys.modules[name])
+    import signals
+    price = float(m1.close.iloc[20000])
+    post = f"XAUUSD SELL NOW {price + 0.5:.2f}-{price - 0.5:.2f}\nSL {price + 6:.2f}\nTP1 {price - 9:.2f}"
+    now = pd.Timestamp.now(tz="UTC").isoformat()
+    monkeypatch.setattr(signals, "fetch_channel", lambda ch, pages=1, **kw: [dict(id=8, time=now, text=post)])
+    rated = []
+    def fake_predict(self, lane, feats, channel):      # approve the hyper lane only, with a high rating
+        rated.append(lane)
+        assert set(signals.RATER_COLS) - {"ch_recent"} <= set(feats)
+        return 1.2 if lane == "hyper" else -0.4
+    monkeypatch.setattr(signals.SignalRater, "predict", fake_predict)
+    from config import load_config
+    from features import build_features
+    from ai_model import DirectionModel
+    import live, ui
+    ov = dict(ui.STYLES["signalai2x"]); ov["signals"] = dict(ov["signals"], channels=["testch"], poll_s=5)
+    cfg = load_config(ROOT / "config.yaml", use_tuned=False, overrides=ov)
+    cfg.broker.server_utc_offset_hours = 2
+    DirectionModel.fit(build_features(m1.iloc[:20000], cfg), cfg, rounds=40).save(tmp_path / "data" / "model")
+    import threading
+    n = {"i": 0, "r": None}
+    main = threading.main_thread()
+    def keep():                              # also called by the poller thread → count only the trading loop
+        if threading.current_thread() is not main or n["r"] is None:
+            return n["i"] < 40                # the poller thread stops together with the trading loop
+        n["i"] += 1
+        if n["i"] == 3:                     # after a first closed bar (rating context) fetch the post
+            with n["r"]._sig_lock:
+                n["r"].sbook.poll()
+            n["r"]._sig_new = True
+        return n["i"] < 40
+    r = live.Runner(cfg, tmp_path, "demo", keep)
+    n["r"] = r
+    r.events = pd.DatetimeIndex([], tz="UTC"); r.last_cal = 1e18
+    real_sleep = live.time.sleep; live.time.sleep = lambda s: None
+    try:
+        r.run()
+    finally:
+        live.time.sleep = real_sleep
+    assert {"max", "hyper"} <= set(rated)
+    sig_orders = [o for o in mod._fake.orders if "sig" in str(o.get("comment", ""))]
+    assert len(sig_orders) == 1 and "sigh" in sig_orders[0]["comment"] and sig_orders[0]["type"] == 1
+    trades = pd.read_sql_query("SELECT reason_open, confidence FROM trades", r.store.conn)
+    assert "signal:testch:hyper" in trades.reason_open.tolist()

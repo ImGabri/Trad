@@ -184,6 +184,11 @@ signals:                     # 📡 live public Telegram signal channels (dashbo
   risk_pct: 0.5              # risk per signal trade (sized off its stop)
   min_graded: 100            # the signal AI judges a channel after 100 graded signals; it only drops clearly losing ones
   require_h4: false          # true = only take signals in the 4-hour trend's direction
+  lanes: []                  # [max, hyper] = trade each signal in two lanes (≤ $5 / 8 h and any distance / 24 h)
+  ai_rate: false             # true = the signal-rating AI judges every signal per lane (🔮 Signal AI styles)
+  ai_threshold: 0.0          # take a lane only if the AI expects more than this $ per 0.01 lot after costs
+  boost_mult: 1.0            # size × this when the AI expects more than boost_above
+  boost_above: 0.5
 
 learning:
   trade_memory: true         # fast styles (basket / extreme / hyper) learn while trading which situations lose and skip them

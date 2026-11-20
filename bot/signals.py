@@ -343,6 +343,80 @@ class SignalLearner:
         return True, (1.5 if e >= self.boost else 1.0), e, n, f"proven: expected ${e:+.2f} ({n} graded)"
 
 
+# ---------------------------------------------------------------------------------------------- 🔮 signal-rating AI
+LANES = {"max": dict(max_away=5.0, hold_h=8.0), "hyper": dict(max_away=1e9, hold_h=24.0)}
+RATER_COLS = ["dist", "sl_atr", "rr", "h4_ok", "h1_ok", "mom15", "mom60", "vol", "hour", "dow", "order", "aggr", "side", "ch_recent"]
+
+
+def signal_features(sig: Signal, t: pd.Timestamp, close: pd.Series, atr: pd.Series, h1: pd.Series, h4: pd.Series,
+                    atr_med: pd.Series | None = None, posted_target: float | None = None) -> dict:
+    """What the rating AI sees about a signal at time t (closed bars only): distance of price from the posted entry
+    (in ATR, + = already moved the signal's way), stop size, posted reward:risk, 1 h / 4 h trend agreement, 15 / 60 min
+    momentum, volatility vs the last 24 h, time of day / week, order vs zone post, side."""
+    c = float(close.asof(t)); a = float(atr.asof(t)) if len(atr) else 2.0
+    a = a if math.isfinite(a) and a > 0 else 2.0
+    c15, c60 = float(close.asof(t - pd.Timedelta(minutes=15))), float(close.asof(t - pd.Timedelta(minutes=60)))
+    mid = (sig.zone_lo + sig.zone_hi) / 2
+    tgt = posted_target if posted_target is not None else (sig.tps[0] if sig.tps else None)
+    med = float(atr_med.asof(t)) if atr_med is not None and len(atr_med) else a
+    return dict(dist=(c - mid) * sig.side / a, sl_atr=(abs(mid - sig.sl) / a) if sig.sl else np.nan,
+                rr=(abs(tgt - mid) / abs(mid - sig.sl)) if (sig.sl and tgt) else np.nan,
+                h4_ok=float(np.sign(h4.asof(t) or 0) == sig.side), h1_ok=float(np.sign(h1.asof(t) or 0) == sig.side),
+                mom15=(c - c15) * sig.side / a, mom60=(c - c60) * sig.side / a, vol=a / (med if med and math.isfinite(med) else a),
+                hour=t.hour, dow=t.dayofweek, order=float(sig.kind == "order"), aggr=float(sig.aggressive), side=sig.side)
+
+
+class SignalRater:
+    """Gradient-boosted model (one per lane) predicting the $ result per 0.01 lot of trading a signal, after costs.
+    Trained on the graded history shipped with the app (assets/signal_rater_train.csv, 7 channels, Jul 2025 – Nov 2026)
+    plus every live grade; refit whenever new grades arrive. Walk-forward test (€500, Dec 2025 – Nov 2026): taking only
+    signals it rates > $0 lifted Signal Max from +$1,080 to +$1,681 and Signal Hyper from +$1,468 to +$1,627 (per 0.01 lot)."""
+
+    def __init__(self, seed: Path | None = None):
+        self.rows = pd.read_csv(seed) if seed is not None and Path(seed).exists() else pd.DataFrame()
+        self.models: dict = {}
+        self.channels: list[str] = []
+        self.fit()
+
+    def add(self, df: pd.DataFrame) -> None:
+        if df is not None and len(df):
+            self.rows = pd.concat([self.rows, df], ignore_index=True) if len(self.rows) else df.reset_index(drop=True)
+            self.fit()
+
+    def ch_recent(self, ch: str) -> float:
+        if self.rows.empty:
+            return np.nan
+        x = self.rows[self.rows.ch == ch].usd.tail(30)
+        return float(x.mean()) if len(x) >= 5 else np.nan
+
+    def fit(self) -> None:
+        self.models = {}
+        if self.rows.empty:
+            return
+        import lightgbm as lgb
+        self.channels = sorted(set(self.rows.ch.astype(str)))
+        for lane, d in self.rows.groupby("lane"):
+            if len(d) < 150:
+                continue
+            X = d[RATER_COLS].astype(float).copy()
+            X["channel"] = pd.Categorical(d.ch.astype(str), categories=self.channels)
+            m = lgb.LGBMRegressor(n_estimators=150, learning_rate=0.03, num_leaves=8, min_child_samples=25, subsample=0.8,
+                                  subsample_freq=1, colsample_bytree=0.8, verbose=-1, random_state=7)
+            m.fit(X, d.usd.clip(-30, 30))
+            self.models[lane] = m
+
+    def predict(self, lane: str, feats: dict, channel: str) -> float | None:
+        m = self.models.get(lane)
+        if m is None:
+            return None
+        X = pd.DataFrame([{k: float(feats.get(k, np.nan)) if feats.get(k) is not None else np.nan for k in RATER_COLS}])
+        X["ch_recent"] = self.ch_recent(channel)
+        X["channel"] = pd.Categorical([channel], categories=self.channels if channel in self.channels else self.channels + [channel])
+        if channel not in self.channels:
+            X["channel"] = pd.Categorical([np.nan], categories=self.channels)
+        return float(m.predict(X)[0])
+
+
 # ---------------------------------------------------------------------------------------------- live store
 class SignalBook:
     """Live: polls channels, keeps parsed signals + grades in data/signals/, answers 'which zones are active now'."""
@@ -370,6 +444,8 @@ class SignalBook:
             except (ValueError, OSError):
                 pass
         self.learner = SignalLearner(min_n=self.min_graded).fit(self.graded)  # min_graded: config signals.min_graded
+        self.rater: SignalRater | None = None
+        self.lanes: list[str] = []
 
     def due(self) -> bool:
         return time.time() - self.last_poll >= self.poll_s
@@ -415,6 +491,26 @@ class SignalBook:
             self.graded = pd.concat([self.graded, g], ignore_index=True) if not self.graded.empty else g
             self.graded.to_csv(self.folder / "graded.csv", index=False)
             self.learner.fit(self.graded)                               # retrain on every new grade
+            if self.rater is not None and self.lanes and h4 is not None:
+                self._rate_grades(todo, bars, atr, h4)
+
+    def _rate_grades(self, todo: list[Signal], bars: pd.DataFrame, atr: pd.Series, h4: pd.Series) -> None:
+        """Grade the new signals once per lane (exactly as each lane trades them) and teach the rating AI."""
+        from strategy import closed_trend
+        h1 = pd.Series(closed_trend(bars, 60, 20, 50), index=bars.index)
+        med = atr.rolling(1440, min_periods=60).median()
+        rows = []
+        for lane in self.lanes:
+            g = grade(todo, bars, 0.32, atr, **LANES.get(lane, {}))
+            for sg, (_, r) in zip(todo, g.iterrows()):
+                if not r.traded:
+                    continue
+                f = signal_features(sg, pd.Timestamp(sg.time), bars.close, atr, h1, h4, med)
+                rows.append(dict(time=sg.time, ch=sg.channel, lane=lane, usd=r.usd, **f, ch_recent=np.nan))
+        if rows:
+            self.rater.add(pd.DataFrame(rows))
+            pd.DataFrame(rows).to_csv(self.folder / "rated_live.csv", mode="a", index=False,
+                                      header=not (self.folder / "rated_live.csv").exists())
 
     def stats(self) -> dict:
         return channel_stats(self.graded, self.min_graded)

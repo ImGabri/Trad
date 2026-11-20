@@ -46,7 +46,7 @@ class Runner:
         self.model = DirectionModel.load(self.data_dir / "model")
         self.learn_dir = self.data_dir / "learning"
         self.outcome = OutcomeModel.load(self.learn_dir)  # learns from the bot's own trades
-        self.sbook, self._sig_lock, self._sig_new = None, None, False
+        self.sbook, self._sig_lock, self._sig_new, self._sig_ctx = None, None, False, None
         scfg = getattr(cfg, "signals", None)
         if scfg is not None and getattr(scfg, "enabled", False) and list(getattr(scfg, "channels", []) or []):
             import threading
@@ -58,6 +58,11 @@ class Runner:
                                                   valid_h=float(getattr(scfg, "valid_h", 4))),
                                     tp_mode=str(getattr(scfg, "tp_mode", "2r")))
             self._sig_lock = threading.Lock()
+            self._sig_wait = threading.Event()
+            self.sbook.lanes = [str(x) for x in (getattr(scfg, "lanes", None) or [])]
+            if getattr(scfg, "ai_rate", False):
+                from signals import SignalRater
+                self.sbook.rater = SignalRater(Path(__file__).with_name("assets") / "signal_rater_train.csv")
             threading.Thread(target=self._signal_poller, daemon=True, name="signal-poller").start()
         from memory import TradeMemory
         lc = getattr(cfg, "learning", None)
@@ -217,6 +222,13 @@ class Runner:
     def _signal_status(self):
         if self.sbook is None:
             return None
+        if getattr(self, "_sig_status_cache", None) and time.time() - self._sig_status_cache[0] < 60:
+            return self._sig_status_cache[1]                       # channel stats are heavy: refresh once a minute
+        out = self._signal_status_now()
+        self._sig_status_cache = (time.time(), out)
+        return out
+
+    def _signal_status_now(self):
         recent = [dict(channel=x.channel, time=x.time[:16].replace("T", " "), side="BUY" if x.side > 0 else "SELL",
                        zone=f"{x.zone_lo:.2f}–{x.zone_hi:.2f}", target=x.target, kind=x.kind) for x in self.sbook.signals[-6:][::-1]]
         learn = {}
@@ -483,6 +495,11 @@ class Runner:
                     with self._sig_lock:
                         self.sbook.regrade(m1, float(getattr(cfg.backtest, "spread_cost", 0.32)), f["m5_atr"], h4s)
                     self.state["signals_graded_at"] = hr
+                if getattr(self.sbook, "rater", None) is not None:   # bars the rating AI reads (closed bars only)
+                    from strategy import closed_trend
+                    h4c = pd.Series(f["h4_regime"].to_numpy() if "h4_regime" in f else closed_trend(f, 240, 20, 50), index=f.index)
+                    self._sig_ctx = (f["close"], f["m5_atr"], pd.Series(closed_trend(f, 60, 20, 50), index=f.index), h4c,
+                                     f["m5_atr"].rolling(1440, min_periods=60).median())
                 self._signal_step(m1=m1, row=row)
             except Exception:  # noqa: BLE001
                 log.exception("signal step")
@@ -617,7 +634,7 @@ class Runner:
                     log.info("signals: %d new signal(s)", new)
             except Exception:  # noqa: BLE001 — never let the reader kill the bot
                 log.exception("signal poller")
-            time.sleep(max(5.0, self.sbook.poll_s))
+            self._sig_wait.wait(max(5.0, self.sbook.poll_s))   # own timer: independent of the trading loop's sleep
 
     def _signal_step(self, immediate: bool = False, m1: pd.DataFrame | None = None, row=None):
         """Trade live channel signals. `immediate`: order posts (price + SL/TP) right away at market.
@@ -642,26 +659,49 @@ class Runner:
             return
         with self._sig_lock:
             active = self.sbook.active(now, float(getattr(sc, "valid_h", 4)))
-        for sg in active:
-            key = f"{sg.channel}:{sg.post_id}:{sg.side}:{sg.zone_lo}"
+        from signals import LANES, signal_features
+        lanes = [str(x) for x in (getattr(sc, "lanes", None) or [])] or [None]   # None = one lane from max_away / hold_h
+        ai_rate = bool(getattr(sc, "ai_rate", False)) and self.sbook.rater is not None
+        for sg0 in active:
+          for lane in lanes:
+            sg = sg0
+            lp = LANES.get(lane, {}) if lane else {}
+            away = float(lp.get("max_away", getattr(sc, "max_away", 2.0)))
+            hold_h = float(lp.get("hold_h", getattr(sc, "hold_h", 8)))
+            key = f"{sg.channel}:{sg.post_id}:{sg.side}:{sg.zone_lo}" + (f":{lane}" if lane else "")
             if key in done or open_sig >= int(getattr(sc, "max_open", 2)):
                 continue
             h4v = int(np.sign(float(self.last_feat.get("h4_regime", 0) or 0))) if self.last_feat is not None else 0
             if getattr(sc, "require_h4", False) and h4v not in (0, sg.side):
                 continue
-            take, size_mult, exp_usd, n_gr, why = self.sbook.learner.decide(sg.channel, sg.side, None if h4v == 0 else h4v == sg.side)
+            px = tick.ask if sg.side > 0 else tick.bid
+            if sg.kind == "order" and immediate:
+                if not (sg.zone_lo - away <= px <= sg.zone_hi + away):
+                    continue                                   # price already left the entry area (for this lane)
+            p_rate = None
+            if ai_rate and self._sig_ctx is None:
+                self._sig_new = True                           # retry: the AI needs the first closed bar's market data
+                continue
+            if ai_rate:                                        # 🔮 the rating AI judges this signal for this lane
+                cl, at, h1s, h4s, med = self._sig_ctx
+                try:
+                    p_rate = self.sbook.rater.predict(lane or "max", signal_features(sg, now, cl, at, h1s, h4s, med), sg.channel)
+                except Exception:  # noqa: BLE001
+                    log.exception("signal rating")
+            if p_rate is not None:
+                take = p_rate > float(getattr(sc, "ai_threshold", 0.0))
+                size_mult = float(getattr(sc, "boost_mult", 1.0)) if p_rate > float(getattr(sc, "boost_above", 0.5)) else 1.0
+                why = f"AI rates it ${p_rate:+.2f} per 0.01 lot"
+            else:
+                take, size_mult, exp_usd, n_gr, why = self.sbook.learner.decide(sg.channel, sg.side, None if h4v == 0 else h4v == sg.side)
             if not take:
                 done.add(key)
-                log.info("signal %s skipped by the learner: %s", key, why)
+                log.info("signal %s skipped: %s", key, why)
                 continue
-            px = tick.ask if sg.side > 0 else tick.bid
             if str(getattr(sc, "tp_mode", "first")).lower() == "2r":   # optimised: ignore posted TPs, target 2 × risk
                 import copy as _copy
                 sg = _copy.copy(sg); sg.target = None
             if sg.kind == "order" and immediate:
-                away = float(getattr(sc, "max_away", 2.0))
-                if not (sg.zone_lo - away <= px <= sg.zone_hi + away):
-                    continue                                   # price already left the entry area
                 sl = sg.sl if sg.sl is not None and (px - sg.sl) * sg.side > 0 else px - sg.side * 2 * float(
                     self.last_feat["m5_atr"] if self.last_feat is not None else 3.0)
                 _, tp = levels_for(sg, px, sl)
@@ -683,7 +723,8 @@ class Runner:
             done.add(key)
             if lots <= 0:
                 continue
-            fill = ex.open_market(self.gold, sg.side, lots, sl_d, tp_d, self.dev_points, f"xau-v2 sig {sg.channel}"[:31])
+            fill = ex.open_market(self.gold, sg.side, lots, sl_d, tp_d, self.dev_points,
+                                  f"xau-v2 sig{'' if not lane else lane[0]} {sg.channel}"[:31])
             if not fill.ok:
                 log.warning("signal %s rejected (%s)", key, fill.retcode)
                 continue
@@ -691,15 +732,17 @@ class Runner:
             self.risk.trades_today += 1
             self._set_meta(fill.ticket, dict(atr=float(row["m5_atr"]) if row is not None else 3.0, open_ts=time.time(),
                                              best=fill.price, side=sg.side, kind="signal", conf=0, tp=fill.price + sg.side * tp_d,
-                                             sl=fill.price - sg.side * sl_d, hold_min=float(getattr(sc, "hold_h", 8)) * 60,
+                                             sl=fill.price - sg.side * sl_d, hold_min=hold_h * 60,
                                              channel=sg.channel, lots=lots))
             self.store.record_trade(ticket=fill.ticket, symbol=self.gold, side="BUY" if sg.side > 0 else "SELL", lots=lots,
                                     open_time=datetime.now(timezone.utc).isoformat(), open_price=fill.price,
                                     sl=fill.price - sg.side * sl_d, tp=fill.price + sg.side * tp_d,
                                     spread_at_entry=float(tick.ask - tick.bid), slippage=(fill.price - fill.requested) * sg.side,
-                                    confidence=0.0, session="signal", reason_open=f"signal:{sg.channel}", mode=self.mode)
-            self.tg.send(f"📡 {sg.channel}: {'BUY' if sg.side > 0 else 'SELL'} {lots} @ {fill.price:.2f} "
-                         f"SL {fill.price - sg.side * sl_d:.2f} TP {fill.price + sg.side * tp_d:.2f}")
+                                    confidence=float(p_rate) if p_rate is not None else 0.0, session="signal",
+                                    reason_open=f"signal:{sg.channel}" + (f":{lane}" if lane else ""), mode=self.mode)
+            self.tg.send(f"📡 {sg.channel}{' ' + lane if lane else ''}: {'BUY' if sg.side > 0 else 'SELL'} {lots} @ {fill.price:.2f} "
+                         f"SL {fill.price - sg.side * sl_d:.2f} TP {fill.price + sg.side * tp_d:.2f}"
+                         + (f" · AI ${p_rate:+.2f}" if p_rate is not None else ""))
             log.info("signal trade %s %s lots=%s", key, fill.price, lots)
         self.state["signals_done"] = sorted(done)[-500:]
         self._save_state()
