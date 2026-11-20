@@ -203,9 +203,25 @@ STYLES["hyperai"] = {"strategy": {"mode": "ai", "ai_gate": True, "ai_only_min_co
                                   "trail_distance_atr": 99.0, "equity_tp_pct": 0.0},
                      "risk": {"risk_per_trade_pct": 1.0, "max_concurrent": 3, "max_daily_trades": 200},
                      "analyst": {"veto_conf": 0.0}, "sessions": {"asia_enabled": True, "asia_min_confidence": 0.5}}
-# 📡 Signal Max 5: Hyper Max 5 + live Telegram signal channels (configured in the dashboard's Signal channels card).
+# 📡 Signal styles — channel signals optimised on Jul 2025–Mar 2026, checked on Apr–Nov 2026 (6 channels, 1,884 signals):
+#   Signal Max: order posts only while price is ≤ $5 from the posted entry, target 2R, out after 8 h.
+#   Signal Hyper: EVERY signal (any distance), target 2R, out after 24 h.
+# Combined backtest Aug 2025 → Nov 2026 (same window as the other styles' latest period; signal trades 0.5 % of the combined
+# account): €200 / €1,000 → Signal Max alone +512 % / +103 %; Signal Hyper alone +493 % / +102 %;
+#   Hyper Max 5 + Signal Max +1,199 % (dd −85 %) / +514 % (dd −47 %);
+#   Hyper Max 5 + Signal Hyper BLOWN at €200 / +540 % (dd −39 %) at €1,000 (Hyper Max 5 alone: +664 % / +284 %).
+#   Results are very start-date sensitive: from 21 Jul 2025 the same Hyper Max 5 + Signal Hyper made +3,818 % at €200.
+SIG_MAX = {"enabled": True, "max_away": 5.0, "tp_mode": "2r", "hold_h": 8, "max_open": 5, "risk_pct": 0.5}
+SIG_HYPER = {"enabled": True, "max_away": 1e9, "tp_mode": "2r", "hold_h": 24, "max_open": 10, "risk_pct": 0.5}
 STYLES["signalmax5"] = {"strategy": dict(STYLES["hypermax5"]["strategy"]), "risk": dict(STYLES["hypermax5"]["risk"]),
-                        "signals": {"enabled": True}}
+                        "signals": dict(SIG_MAX)}
+STYLES["signalhyper"] = {"strategy": {"mode": "signals", "ai_gate": False, "ai_only_min_conf": 0.0, "equity_tp_pct": 0.0},
+                         "risk": {"max_daily_trades": 500}, "analyst": {"veto_conf": 0.0}, "sessions": {"asia_enabled": True},
+                         "signals": dict(SIG_HYPER)}
+STYLES["signalhypermax5"] = {"strategy": dict(STYLES["hypermax5"]["strategy"]), "risk": dict(STYLES["hypermax5"]["risk"]),
+                             "signals": dict(SIG_HYPER)}
+STYLES["signalhypermax5x2"] = {"strategy": dict(STYLES["hypermax5"]["strategy"]),
+                               "risk": dict(STYLES["hypermax5"]["risk"], risk_per_trade_pct=2.0), "signals": dict(SIG_HYPER)}
 STYLES["both"] = {"strategy": {"mode": "turbo", "turbo_direction": "both"}}
 BASKET_DEFAULT = {"candles_tf": "m5", "candles": 5, "follow": True, "step_atr": 0.75, "max_entries": 2, "tp_atr": 1.0,
                   "sl_atr": 6.0, "hold_minutes": 240, "equity_per_001": 50}
@@ -264,6 +280,8 @@ def _style() -> str:
                     cs = getattr(rk, "conf_sizing", None)
                     sg = getattr(load_config(APP / "config.yaml"), "signals", None)
                     if sg is not None and getattr(sg, "enabled", False) and not (cs is not None and getattr(cs, "enabled", False)):
+                        if float(getattr(sg, "max_away", 2)) > 100:
+                            return "signalhypermax5x2" if float(rk.risk_per_trade_pct) >= 2 else "signalhypermax5"
                         return "signalmax5"
                     if cs is not None and getattr(cs, "enabled", False):
                         return "predictsafe" if float(getattr(cs, "sure_mult", 1.5)) >= 2.0 else "predictmax5"
@@ -273,6 +291,8 @@ def _style() -> str:
         return "both" if str(getattr(st, "turbo_direction", "long")) == "both" else "turbo"
     if str(getattr(st, "mode", "scalp")) == "ai":
         return "hyperai"
+    if str(getattr(st, "mode", "scalp")) == "signals":
+        return "signalhyper"
     if str(getattr(st, "mode", "scalp")) == "basket":
         b = load_config(APP / "config.yaml").basket
         if getattr(b, "independent", False):
@@ -396,7 +416,11 @@ def _write_user(updates: dict, replace: bool = False):
     from config import _deep_update
     p = DATA / "user.yaml"
     old = (yaml.safe_load(p.read_text()) if p.exists() else {}) or {}
-    cur = ({"signals": old["signals"]} if "signals" in old else {}) if replace else old  # signal channels survive styles
+    if replace:  # a style is a complete setup; only your channel list / signal risk survive (signals off unless the style uses them)
+        keep = {k: v for k, v in (old.get("signals") or {}).items() if k in ("channels", "risk_pct")}
+        cur = {"signals": dict(keep, enabled=False)} if keep else {}
+    else:
+        cur = old
     updates = copy.deepcopy(updates)
     _deep_update(cur, updates)
     DATA.mkdir(exist_ok=True)
@@ -476,7 +500,10 @@ def action(name: str, body: dict) -> str:
                "turbo": "🎯 Perfect: the best backtested strategy (hourly trend breakouts, 1 % risk). Use €100+.",
                "perfect": "🎯 Perfect: the best backtested strategy (hourly trend breakouts, 1 % risk). Use €100+.",
                "extreme": "☠️ Extreme: ~85 trades a day, buys AND sells with the last 2 candles. Lost money in every backtest period.",
-               "signalmax5": "📡 Signal Max 5: Hyper Max 5 plus live trades from your Telegram signal channels (set them in the Signal channels card).",
+               "signalmax5": "📡 Signal Max 5: Hyper Max 5 plus live channel signals (≤ $5 from entry, 2R, 8 h).",
+               "signalhyper": "📡 Signal Hyper: trades EVERY channel signal (2R target, 24 h) — no own entries.",
+               "signalhypermax5": "📡🔥 Signal Hyper Max 5: Hyper Max 5 + every channel signal. Best at €1,000+ (+540 %, worst −39 %); it blew €200 in the backtest.",
+               "signalhypermax5x2": "☢ Signal Hyper Max 5 ×2: the same at 2 % breakout risk (€1,000 +1,316 %, drops to −76 %; blew €200).",
                "hyperai": "🤖 Hyper AI: pure AI, no rules — trades whenever the AI is ≥ 60 % sure. Lost money in backtests (demo experiment).",
                "predictsafe": "🔮🛡 Predict Max 5 Safe: both Hyper Max 5 and Predict Max 5 at once, at half risk with a wider stop. Worst backtest drop −78 % (−43 % in 2025–26).",
                "predictmax5": "🔮 Predict Max 5: Hyper Max 5 trades with the AI's prediction setting the size (1.5× when it agrees, 0.5× when not).",

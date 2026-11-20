@@ -52,7 +52,11 @@ class Runner:
             import threading
             from signals import SignalBook
             self.sbook = SignalBook(self.data_dir / "signals", [str(c).strip().lstrip("@") for c in scfg.channels],
-                                    float(getattr(scfg, "poll_s", 20)), int(getattr(scfg, "min_graded", 20)))
+                                    float(getattr(scfg, "poll_s", 20)), int(getattr(scfg, "min_graded", 100)),
+                                    grade_kw=dict(max_away=float(getattr(scfg, "max_away", 5.0)),
+                                                  hold_h=float(getattr(scfg, "hold_h", 8)),
+                                                  valid_h=float(getattr(scfg, "valid_h", 4))),
+                                    tp_mode=str(getattr(scfg, "tp_mode", "2r")))
             self._sig_lock = threading.Lock()
             threading.Thread(target=self._signal_poller, daemon=True, name="signal-poller").start()
         from memory import TradeMemory
@@ -651,8 +655,12 @@ class Runner:
                 log.info("signal %s skipped by the learner: %s", key, why)
                 continue
             px = tick.ask if sg.side > 0 else tick.bid
+            if str(getattr(sc, "tp_mode", "first")).lower() == "2r":   # optimised: ignore posted TPs, target 2 × risk
+                import copy as _copy
+                sg = _copy.copy(sg); sg.target = None
             if sg.kind == "order" and immediate:
-                if not (sg.zone_lo - 2.0 <= px <= sg.zone_hi + 2.0):
+                away = float(getattr(sc, "max_away", 2.0))
+                if not (sg.zone_lo - away <= px <= sg.zone_hi + away):
                     continue                                   # price already left the entry area
                 sl = sg.sl if sg.sl is not None and (px - sg.sl) * sg.side > 0 else px - sg.side * 2 * float(
                     self.last_feat["m5_atr"] if self.last_feat is not None else 3.0)

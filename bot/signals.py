@@ -199,7 +199,7 @@ def levels_for(sig: Signal, entry: float, far: float) -> tuple[float, float]:
 
 def zone_trade(sig: Signal, bars: pd.DataFrame, spread: float = 0.32, atr: pd.Series | None = None,
                valid_h: float = 4.0, hold_h: float = 8.0, buffer_atr: float = 0.5, min_buffer: float = 1.0,
-               slip: float = 0.05) -> dict | None:
+               slip: float = 0.05, **_) -> dict | None:
     """Simulate the trade a signal implies on M1 BID bars. None if never tapped + confirmed in time, else
     dict(entry_time, entry, sl, tp, exit_time, exit, reason, usd) — usd = result per 1 oz (0.01 lot) after costs."""
     c = find_confirmation(sig, bars, spread, atr, valid_h, buffer_atr, min_buffer)
@@ -347,8 +347,10 @@ class SignalLearner:
 class SignalBook:
     """Live: polls channels, keeps parsed signals + grades in data/signals/, answers 'which zones are active now'."""
 
-    def __init__(self, folder: Path, channels: list[str], poll_s: float = 60, min_graded: int = 20):
+    def __init__(self, folder: Path, channels: list[str], poll_s: float = 60, min_graded: int = 20,
+                 grade_kw: dict | None = None, tp_mode: str = "first"):
         self.folder, self.channels, self.poll_s, self.min_graded = Path(folder), list(channels), float(poll_s), int(min_graded)
+        self.grade_kw, self.tp_mode = dict(grade_kw or {}), str(tp_mode).lower()   # grade exactly as the bot trades
         self.folder.mkdir(parents=True, exist_ok=True)
         self.path = self.folder / "signals.json"
         self.signals: list[Signal] = []
@@ -402,7 +404,12 @@ class SignalBook:
         todo = [s for s in self.signals if (s.channel, s.post_id, s.side, s.zone_lo) not in done
                 and pd.Timestamp(s.time) < horizon and pd.Timestamp(s.time) >= bars.index[0]]
         if todo:
-            g = grade(todo, bars, spread, atr)
+            if self.tp_mode == "2r":
+                import copy
+                todo = [copy.copy(x) for x in todo]
+                for x in todo:
+                    x.target = None
+            g = grade(todo, bars, spread, atr, **self.grade_kw)
             if h4 is not None:
                 g["h4_ok"] = [int(np.sign(h4.asof(pd.Timestamp(t)) or 0)) == sd for t, sd in zip(g.time, g.side)]
             self.graded = pd.concat([self.graded, g], ignore_index=True) if not self.graded.empty else g

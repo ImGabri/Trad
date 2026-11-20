@@ -178,7 +178,9 @@ signals:                     # 📡 live public Telegram signal channels (dashbo
   poll_s: 20                 # check every channel every 20 s
   valid_h: 4                 # a zone post is tradeable for 4 h
   hold_h: 8                  # signal trades are closed after 8 h at the latest
-  max_open: 2                # signal trades open at once (on top of the style's own trades)
+  max_away: 5.0              # order posts: trade only while price is within $5 of the posted entry
+  tp_mode: 2r                # 2r = target 2 × the risk (optimised); first = the channel's TP1
+  max_open: 5                # signal trades open at once (on top of the style's own trades)
   risk_pct: 0.5              # risk per signal trade (sized off its stop)
   min_graded: 100            # the signal AI judges a channel after 100 graded signals; it only drops clearly losing ones
   require_h4: false          # true = only take signals in the 4-hour trend's direction

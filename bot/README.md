@@ -3,6 +3,49 @@
 A self-learning gold scalper with a one-click dashboard. It trades XAUUSD on your PU Prime MT5 demo, runs in
 the background, restarts at every Windows logon and retrains itself every weekend on everything it has collected.
 
+## v2.21 — 📡 live Telegram signals with a learning signal AI
+
+**What it does:** the bot reads public gold signal channels live, about every 20 s, without a login.
+- **Pre-filled channels:** Forexstar_Gold, UnitedKingsOfficial, EliteGoldTraders03, AnabelSignals,
+  xauusd_signals, GoldPrincess and Callisto FX. Edit them in **Signal channels**.
+- **Order posts** (price + SL/TP) are traded at once.
+- **Zone posts** are traded when price taps the zone and a 1-minute candle confirms.
+- **Grading:** every signal is graded on real prices with your spread. The **signal AI** retrains every 15 min and
+  drops channels that are clearly losing.
+
+**Rules, optimised on Jul 2025 – Mar 2026 and checked on Apr – Nov 2026** (1,884 signals): trade only while price is
+≤ $5 from the posted entry, target 2 × the risk instead of the channel's TP1, and close after 8 h.
+- **Unseen half:** +$1,978 per 0.01 lot.
+- **Old default rule:** +$1,002.
+
+**Graded history of all 7 channels**, shipped with the bot so the signal AI starts out informed (per 0.01 lot):
+
+| Channel | Trades | Avg | Total |
+|---|---|---|---|
+| UnitedKingsOfficial | 611 | +$2.15 | +$1,316 |
+| Forexstar_Gold | 461 | +$0.85 | +$390 |
+| EliteGoldTraders03 | 75 | +$3.94 | +$295 |
+| AnabelSignals | 56 | +$0.81 | +$45 |
+| GoldPrincess | 54 | −$1.51 | −$82 |
+| xauusd_signals | 119 | −$0.90 | −$107 |
+| Callisto FX | 320 | −$1.53 | −$489 (UK FCA warning list) |
+
+**New styles.** Combined backtest Aug 2025 – Nov 2026, signal trades at 0.5 % of the combined account:
+
+| Style | €200 | €1,000 |
+|---|---|---|
+| 🎯🔥⚡ Hyper Max 5 (reference) | +664 % (dd −63 %) | +284 % (dd −51 %) |
+| 📡 Signal Hyper (every signal, 2R, 24 h) | +493 % (dd −67 %) | +102 % (dd −37 %) |
+| 📡 Signal Max 5 (Hyper Max 5 + signals ≤ $5 away) | +1,199 % (dd −85 %) | +514 % (dd −47 %) |
+| 📡🔥 Signal Hyper Max 5 (Hyper Max 5 + every signal) | **blown** | **+540 % (dd −39 %)** |
+| ☢ Signal Hyper Max 5 ×2 (2 % breakout risk) | **blown** | +1,316 % (dd −76 %) |
+
+- **Small accounts:** at €200 the minimum 0.01 lot on a signal's wide stop risks too much, so the every-signal
+  combinations can wipe out the account. Use €1,000 or more for them.
+- **Start-date sensitivity:** results depend heavily on the start date. From 21 Jul 2025 instead of 1 Aug, the same
+  Signal Hyper Max 5 made +3,818 % at €200.
+- **Short history:** channel data only covers 2025–26.
+
 ## v2.20 — 🤖 Hyper AI and a ranked style list
 
 - **Ranked style list:** the style buttons can be ranked by **🏆 Best profit**, **⚡ Most trades/day** or
