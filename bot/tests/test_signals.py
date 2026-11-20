@@ -23,6 +23,18 @@ def test_parse_zone_and_order_posts():
     o = parse_post("c", 3, "2026-01-01T10:00:00+00:00", "XAUUSD BUY NOW 2350-2346\nSL 2340\nTP1 2355\nTP2 2362")
     assert o[0].kind == "order" and o[0].sl == 2340 and o[0].tps == [2355, 2362]
     assert parse_post("c", 4, "2026-01-01T10:00:00+00:00", "Freakin INSANE MOVES CAUGHT LET'S GOOOO") == []
+    T = "2026-01-01T10:00:00+00:00"
+    e = parse_post("c", 5, T, "XAUUSD SELL NOW 4030\n\nTP  4027\nTP  4024\n\nSL   4032")[0]
+    assert (e.side, e.zone_lo, e.sl, e.tps) == (-1, 4030.0, 4032.0, [4027.0, 4024.0])
+    f = parse_post("c", 6, T, "Gold Next Buy\nTrade $3570/65 Limited\nStope Loss $3557\nTake Profit $3580\nTake Profit $3590")[0]
+    assert (f.side, f.zone_lo, f.zone_hi, f.sl, f.tps) == (1, 3565.0, 3570.0, 3557.0, [3580.0, 3590.0])
+    g = parse_post("c", 7, T, "GOLD Buyers In Panic! SELL!\nThe instrument tests an important psychological level 3588.0\n"
+                   "Target - 3542.2\nRecommended Stop Loss - 3617.8")[0]
+    assert (g.side, g.zone_lo, g.sl, g.target) == (-1, 3588.0, 3617.8, 3542.2)
+    h = parse_post("c", 8, T, "ENTER: #XAUUSD long trade\nCURRENT PRICE: 3,687.738\nSTOP LOSS: 3,663.379\nTAKE PROFIT: 3,724.442")[0]
+    assert (h.side, h.zone_lo, h.sl, h.target) == (1, 3687.738, 3663.379, 3724.442)
+    assert parse_post("c", 9, T, "#XAUUSD SELL\n\nTP1 HIT 30+ PIPS PROFIT DONE") == []
+    assert parse_post("c", 10, T, "EURUSD Buy! CURRENT PRICE: 1.09606 STOP LOSS: 1.09528 TAKE PROFIT: 1.09722") == []
 
 
 def test_zone_trade_taps_confirms_and_grades():

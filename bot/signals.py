@@ -65,19 +65,72 @@ def parse_post(channel: str, post_id: int, t: str, text: str) -> list[Signal]:
                           aggressive=bool(m.group(1)), text=text[:400]))
     if out:
         return out
-    m = re.search(r"\b(buy|sell)\b(?:\s+(?:now|limit|stop))?\s*@?\s*" + NUM + r"(?:\s*[-–/]\s*" + NUM + r")?", text, re.I)
-    if m and re.search(r"\b(sl|stop\s*loss|tp\d?|take\s*profit)\b", text, re.I):
-        side = 1 if m.group(1).lower() == "buy" else -1
-        a = _f(m.group(2)); b = _f(m.group(3)) if m.group(3) else a
-        sl = re.search(r"\b(?:sl|stop\s*loss)\s*:?\s*@?\s*" + NUM, text, re.I)
-        tps = [_f(x) for x in re.findall(r"\btp\s*\d?\s*:?\s*@?\s*" + NUM, text, re.I)]
-        tps = [x for x in tps if (x - (a + b) / 2) * side > 0]
-        out.append(Signal(channel, post_id, t, side, min(a, b), max(a, b), tps[0] if tps else None,
-                          _f(sl.group(1)) if sl else None, tps, kind="order", text=text[:400]))
-    return out
+    o = parse_order(channel, post_id, t, text)
+    return [o] if o else []
+
+
+_PX = r"\$?\s*(\d{3,5}(?:\.\d{1,3})?)"
+_RESULT = re.compile(r"(\bhit\b|booked|running|profit done|pips? profit|\+\s*\d+\s*pips|closed|in profit|secured)", re.I)
+
+
+def parse_order(channel: str, post_id: int, t: str, text: str) -> Signal | None:
+    """Classic gold order posts in the common formats, e.g.
+       'XAUUSD SELL NOW 4030 / TP 4027 / TP 4024 / SL 4032'
+       'Gold Buy / Trade $3570/65 Limited / Stope Loss $3557 / Take Profit $3580 / Take Profit $3590'
+       'GOLD … BUY! … level 3765.8 / Target - 3801.1 / Stop Loss - 3742.3'
+       'ENTER: #XAUUSD long trade / CURRENT PRICE: 3,687.738 / STOP LOSS: 3,663.379 / TAKE PROFIT: 3,724.442'
+    Result / update posts ('TP1 HIT', '+80 pips', 'booked') and non-gold posts are ignored. Sanity checks: the stop
+    is on the losing side, targets on the winning side, all prices within 10 % of the entry."""
+    tx = re.sub(r"(?<=\d),(?=\d{3}\b)", "", text)                    # 3,687.738 → 3687.738
+    if not re.search(r"(xau|\bgold\b)", tx, re.I) or re.search(r"(xag|silver)", tx, re.I):
+        return None
+    d = re.search(r"\b(buy|sell|long|short)\b", tx, re.I)
+    if not d:
+        return None
+    side = 1 if d.group(1).lower() in ("buy", "long") else -1
+    sl_m = re.search(r"\b(?:sl|stop\s*loss|stope\s*loss|stoploss)\b[^\d$]{0,12}" + _PX, tx, re.I)
+    tps = [float(x) for x in re.findall(r"\b(?:tp(?:\s?\d(?!\d))?|take\s*profit(?:\s?\d(?!\d))?|target)\b[^\d$]{0,8}" + _PX, tx, re.I)]
+    ent = re.search(r"\b(?:now|@|trade|entry|enter(?:\s+at)?|current\s+price|level|price|zone)\b[^\d$]{0,6}" + _PX
+                    + r"(?:\s*[-/]\s*(\d{1,5}(?:\.\d{1,3})?))?", tx, re.I)
+    if not ent:
+        ent = re.search(r"\b(?:buy|sell)\b[^\d$]{0,10}" + _PX + r"(?:\s*[-/]\s*(\d{1,5}(?:\.\d{1,3})?))?", tx, re.I)
+    if not ent or (not sl_m and not tps):
+        return None
+    if _RESULT.search(tx) and not (sl_m and tps):
+        return None
+    e1 = float(ent.group(1)); e2 = ent.group(2)
+    if e2:                                                    # '3570/65' shorthand → 3565
+        e2 = float(e2) if len(e2.split(".")[0]) >= 3 else float(str(int(e1))[: -len(e2.split(".")[0])] + e2)
+    else:
+        e2 = e1
+    lo, hi = min(e1, e2), max(e1, e2)
+    mid = (lo + hi) / 2
+    if mid < 500:
+        return None
+    sl = float(sl_m.group(1)) if sl_m else None
+    if sl is not None and ((mid - sl) * side <= 0 or abs(sl - mid) > 0.1 * mid):
+        sl = None
+    tps = [x for x in tps if (x - mid) * side > 0 and abs(x - mid) <= 0.1 * mid]
+    if sl is None and not tps:
+        return None
+    return Signal(channel, post_id, t, side, lo, hi, tps[0] if tps else None, sl, tps, kind="order", text=text[:400])
 
 
 # ---------------------------------------------------------------------------------------------- reading
+def dedupe(signals: list[Signal], hours: float = 12.0) -> list[Signal]:
+    """Channels re-post the same trade as updates ('Hit TP ✔️ … Trade $3567 Active'). Keep the first post of the same
+    channel / side / entry / stop within `hours`."""
+    out, last = [], {}
+    for sg in sorted(signals, key=lambda x: (x.time, x.post_id)):
+        k = (sg.channel, sg.side, round(sg.zone_lo), round(sg.zone_hi), round(sg.sl) if sg.sl else None)
+        t = pd.Timestamp(sg.time)
+        if k in last and t - last[k] <= pd.Timedelta(hours=hours):
+            continue
+        last[k] = t
+        out.append(sg)
+    return out
+
+
 def fetch_channel(channel: str, pages: int = 1, before: int | None = None, pause_s: float = 1.0) -> list[dict]:
     """Newest posts of a PUBLIC channel via its web preview. Returns [{id, time, text}] (oldest first)."""
     posts: dict[int, dict] = {}
@@ -175,10 +228,48 @@ def zone_trade(sig: Signal, bars: pd.DataFrame, spread: float = 0.32, atr: pd.Se
     return None
 
 
+def order_trade(sig: Signal, bars: pd.DataFrame, spread: float = 0.32, atr: pd.Series | None = None,
+                hold_h: float = 8.0, slip: float = 0.05, max_away: float = 2.0, **_) -> dict | None:
+    """Order posts as the live bot trades them: market entry on the next M1 bar if price is still within max_away $ of
+    the posted entry, posted SL (else 2×ATR) and first TP (else 2R), max hold hold_h."""
+    t0 = _t0(sig)
+    after = np.flatnonzero(bars.index > t0)
+    if not len(after):
+        return None
+    j = int(after[0]); s = sig.side
+    if bars.index[j] - t0 > pd.Timedelta(minutes=10):
+        return None                                           # no prices right after the post (weekend / gap)
+    o = bars.open.iat[j]
+    if not (sig.zone_lo - max_away <= o <= sig.zone_hi + max_away):
+        return None
+    entry = o + (spread + slip if s > 0 else -slip)
+    a = float(atr.asof(bars.index[j])) if atr is not None and len(atr) else 3.0
+    sl = sig.sl if sig.sl is not None and (entry - sig.sl) * s > 0 else entry - s * 2 * (a if math.isfinite(a) else 3.0)
+    _, tp = levels_for(sig, entry, sl)
+    ask_adj = spread if s < 0 else 0.0
+    t_in = bars.index[j]
+    rest = bars[(bars.index >= t_in) & (bars.index <= t_in + pd.Timedelta(hours=hold_h))]
+    for k in range(len(rest)):
+        hh, ll = rest.high.iat[k] + ask_adj, rest.low.iat[k] + ask_adj
+        if (s > 0 and ll <= sl) or (s < 0 and hh >= sl):
+            px, why = sl - s * slip, "sl"
+        elif (s > 0 and hh >= tp) or (s < 0 and ll <= tp):
+            px, why = tp, "tp"
+        else:
+            continue
+        return dict(entry_time=str(t_in), entry=round(entry, 2), sl=round(sl, 2), tp=round(tp, 2),
+                    exit_time=str(rest.index[k]), exit=round(px, 2), reason=why, usd=round((px - entry) * s, 3))
+    if len(rest):
+        px = rest.close.iat[-1] + ask_adj - s * slip
+        return dict(entry_time=str(t_in), entry=round(entry, 2), sl=round(sl, 2), tp=round(tp, 2),
+                    exit_time=str(rest.index[-1]), exit=round(px, 2), reason="time", usd=round((px - entry) * s, 3))
+    return None
+
+
 def grade(signals: list[Signal], bars: pd.DataFrame, spread: float = 0.32, atr: pd.Series | None = None, **kw) -> pd.DataFrame:
     rows = []
     for sg in signals:
-        r = zone_trade(sg, bars, spread, atr, **kw)
+        r = (order_trade if sg.kind == "order" else zone_trade)(sg, bars, spread, atr, **kw)
         rows.append(dict(channel=sg.channel, post_id=sg.post_id, time=sg.time, side=sg.side, zone_lo=sg.zone_lo,
                          zone_hi=sg.zone_hi, target=sg.target, kind=sg.kind, aggressive=sg.aggressive,
                          traded=r is not None, **(r or {})))
@@ -229,6 +320,7 @@ class SignalBook:
     def poll(self) -> int:
         self.last_poll = time.time()
         known = {(s.channel, s.post_id, s.side, s.zone_lo) for s in self.signals}
+        before = len(self.signals)
         new = 0
         for ch in self.channels:
             try:
@@ -240,7 +332,8 @@ class SignalBook:
             except Exception as e:  # noqa: BLE001 — network / layout problems must never stop trading
                 self.errors[ch] = str(e)[:120]
         if new:
-            self.signals = self.signals[-2000:]
+            self.signals = dedupe(self.signals)[-2000:]           # repeated update posts → one signal
+            new = max(0, len(self.signals) - before)
             self.path.write_text(json.dumps([asdict(s) for s in self.signals], ensure_ascii=False), encoding="utf-8")
         return new
 
