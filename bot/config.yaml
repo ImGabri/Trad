@@ -172,6 +172,17 @@ analyst:                     # "what will probably happen next" — see analyst.
   news_interval_min: 15
   news_veto_conf: 0.75       # skip a trade only when headlines strongly point the other way (not backtestable → cautious)
 
+signals:                     # 📡 live public Telegram signal channels (dashboard → Signal channels). Read-only web preview.
+  enabled: false
+  channels: []               # e.g. [callistofx] — public channel names
+  poll_s: 20                 # check every channel every 20 s
+  valid_h: 4                 # a zone post is tradeable for 4 h
+  hold_h: 8                  # signal trades are closed after 8 h at the latest
+  max_open: 2                # signal trades open at once (on top of the style's own trades)
+  risk_pct: 0.5              # risk per signal trade (sized off its stop)
+  min_graded: 20             # mute a channel once ≥ 20 of its signals are graded on real prices and the average lost
+  require_h4: false          # true = only take signals in the 4-hour trend's direction
+
 learning:
   trade_memory: true         # fast styles (basket / extreme / hyper) learn while trading which situations lose and skip them
                              # (data/learning/memory.json; seeded from the 2020–26 backtest). Off for 🎯 Perfect — it hurt there.

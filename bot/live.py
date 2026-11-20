@@ -46,6 +46,15 @@ class Runner:
         self.model = DirectionModel.load(self.data_dir / "model")
         self.learn_dir = self.data_dir / "learning"
         self.outcome = OutcomeModel.load(self.learn_dir)  # learns from the bot's own trades
+        self.sbook, self._sig_lock, self._sig_new = None, None, False
+        scfg = getattr(cfg, "signals", None)
+        if scfg is not None and getattr(scfg, "enabled", False) and list(getattr(scfg, "channels", []) or []):
+            import threading
+            from signals import SignalBook
+            self.sbook = SignalBook(self.data_dir / "signals", [str(c).strip().lstrip("@") for c in scfg.channels],
+                                    float(getattr(scfg, "poll_s", 20)), int(getattr(scfg, "min_graded", 20)))
+            self._sig_lock = threading.Lock()
+            threading.Thread(target=self._signal_poller, daemon=True, name="signal-poller").start()
         from memory import TradeMemory
         lc = getattr(cfg, "learning", None)
         self.memory = TradeMemory(self.learn_dir / "memory.json", seed=Path(__file__).with_name("assets") / "memory_seed.json") \
@@ -164,6 +173,8 @@ class Runner:
                 self._poll_telegram()
                 self._refresh_calendar()
                 self._manage_positions()
+                if self._sig_new:
+                    self._signal_step(immediate=True)
                 self._check_new_bar()
                 self._publish_status()
                 if self._retrain_due():
@@ -196,7 +207,16 @@ class Runner:
             today=self._today_stats(), last=self.last_decision, outlook=self.outlook,
             news=dict(self.news.latest or {}, enabled=True, track=self.news_track) if self.news else {"enabled": False}, model=self.model.meta.get("trained_at", ""),
             hard_stop=self.risk.hard_stop, daily_halt=self.risk.daily_halt, drift_pause=self.risk.drift_pause,
-            memory=self.memory.summary(self._fast_style()) if self.memory is not None and self._basket_mode() else None)
+            memory=self.memory.summary(self._fast_style()) if self.memory is not None and self._basket_mode() else None,
+            signals=self._signal_status())
+
+    def _signal_status(self):
+        if self.sbook is None:
+            return None
+        recent = [dict(channel=x.channel, time=x.time[:16].replace("T", " "), side="BUY" if x.side > 0 else "SELL",
+                       zone=f"{x.zone_lo:.2f}–{x.zone_hi:.2f}", target=x.target, kind=x.kind) for x in self.sbook.signals[-6:][::-1]]
+        return dict(channels=self.sbook.channels, stats=self.sbook.stats(), errors=self.sbook.errors, recent=recent,
+                    min_graded=self.sbook.min_graded)
 
     def _today_stats(self) -> dict:
         day = datetime.now(timezone.utc).date().isoformat()
@@ -359,7 +379,7 @@ class Runner:
                             m["trailed"] = True
                         self.tg.send(f"🚀 #{t} is +{eq_pct:g}% — AI expects more ({self.last_ai['conf']:.2f}), "
                                      f"profit locked at {lock:.2f}, riding on")
-            if now - m["open_ts"] >= st.time_stop_minutes * 60:
+            if now - m["open_ts"] >= float(m.get("hold_min") or st.time_stop_minutes) * 60:
                 m["close_reason"] = "time"
                 self._set_meta(t, m)
                 ex.close_position(p, self.dev_points, "time")
@@ -445,6 +465,16 @@ class Runner:
         sig = compute_signals(f, cfg, self.events, htf=h1)
         row, s = f.iloc[-1], sig.iloc[-1]
         self.last_feat = row
+        if self.sbook is not None:
+            try:
+                hr = str(m1.index[-1].floor("60min"))
+                if self.state.get("signals_graded_at") != hr:   # grade the channels once an hour on real prices
+                    with self._sig_lock:
+                        self.sbook.regrade(m1, float(getattr(cfg.backtest, "spread_cost", 0.32)), f["m5_atr"])
+                    self.state["signals_graded_at"] = hr
+                self._signal_step(m1=m1, row=row)
+            except Exception:  # noqa: BLE001
+                log.exception("signal step")
         p_up = float(self.model.predict_proba(f.iloc[[-1]]).iloc[0])
         ai_dir, conf = signal_from_proba(pd.Series([p_up]))
         ai_dir, conf = int(ai_dir.iloc[0]), float(conf.iloc[0])
@@ -563,6 +593,99 @@ class Runner:
     # ------------------------------------------------------------------ 🧺 basket mode
     def _basket_mode(self) -> bool:
         return self.mode == "demo" and str(getattr(self.cfg.strategy, "mode", "scalp")).lower() == "basket"
+
+    # ------------------------------------------------------------------ 📡 live Telegram signals
+    def _signal_poller(self):
+        """Background thread: poll every channel every poll_s seconds; flag new signals for the trading loop."""
+        while self.keep_running():
+            try:
+                with self._sig_lock:
+                    new = self.sbook.poll()
+                if new:
+                    self._sig_new = True
+                    log.info("signals: %d new signal(s)", new)
+            except Exception:  # noqa: BLE001 — never let the reader kill the bot
+                log.exception("signal poller")
+            time.sleep(max(5.0, self.sbook.poll_s))
+
+    def _signal_step(self, immediate: bool = False, m1: pd.DataFrame | None = None, row=None):
+        """Trade live channel signals. `immediate`: order posts (price + SL/TP) right away at market.
+        On every closed bar (m1 given): zone posts when price has tapped the zone and the LAST closed M1 bar is the
+        confirmation candle. Channels whose graded results are negative (≥ min_graded trades) are muted."""
+        self._sig_new = False
+        if self.sbook is None or self.mode != "demo" or self._basket_mode():
+            return
+        sc = self.cfg.signals
+        if self.paused or self.risk.hard_stop or self.risk.daily_halt or self._phase_now() in ("pre", "event"):
+            return
+        from signals import find_confirmation, levels_for
+        now = pd.Timestamp.now(tz="UTC")
+        done = set(self.state.setdefault("signals_done", []))
+        stats = self.sbook.stats()
+        positions = ex.bot_positions(self.gold)
+        meta = self._pos_meta()
+        open_sig = sum(1 for p in positions if (meta.get(p.ticket) or {}).get("kind") == "signal")
+        tick = mt5.symbol_info_tick(self.gold)
+        acc = mt5.account_info()
+        if tick is None or acc is None:
+            return
+        with self._sig_lock:
+            active = self.sbook.active(now, float(getattr(sc, "valid_h", 4)))
+        for sg in active:
+            key = f"{sg.channel}:{sg.post_id}:{sg.side}:{sg.zone_lo}"
+            if key in done or open_sig >= int(getattr(sc, "max_open", 2)):
+                continue
+            st = stats.get(sg.channel)
+            if st and st["traded"] >= self.sbook.min_graded and not st["follow"]:
+                continue                                     # muted: this channel's signals lost money after costs
+            if getattr(sc, "require_h4", False) and self.last_feat is not None and \
+                    int(np.sign(float(self.last_feat.get("h4_regime", 0) or 0))) not in (0, sg.side):
+                continue
+            px = tick.ask if sg.side > 0 else tick.bid
+            if sg.kind == "order" and immediate:
+                if not (sg.zone_lo - 2.0 <= px <= sg.zone_hi + 2.0):
+                    continue                                   # price already left the entry area
+                sl = sg.sl if sg.sl is not None and (px - sg.sl) * sg.side > 0 else px - sg.side * 2 * float(
+                    self.last_feat["m5_atr"] if self.last_feat is not None else 3.0)
+                _, tp = levels_for(sg, px, sl)
+            elif sg.kind == "zone" and m1 is not None and len(m1) > 2:
+                atr = None if row is None else pd.Series([float(row["m5_atr"])], index=[m1.index[-1]])
+                c = find_confirmation(sg, m1, float(tick.ask - tick.bid), atr, float(getattr(sc, "valid_h", 4)))
+                if c is None or c[0] != len(m1) - 1:
+                    continue                                   # not confirmed on the bar that just closed
+                sl, tp = levels_for(sg, px, c[1])
+            else:
+                continue
+            sl_d, tp_d = abs(px - sl), abs(tp - px)
+            if sl_d <= 0 or tp_d <= 0:
+                continue
+            lots = position_size(acc.equity / self.acct_usd, sl_d, self.info.trade_contract_size,
+                                 float(getattr(sc, "risk_pct", 0.5)), self.info.volume_step, self.info.volume_min,
+                                 min(self.info.volume_max, self.cfg.instrument.max_lot), commission_per_side(self.cfg),
+                                 getattr(self.cfg.risk, "min_lot_max_risk_pct", 0))
+            done.add(key)
+            if lots <= 0:
+                continue
+            fill = ex.open_market(self.gold, sg.side, lots, sl_d, tp_d, self.dev_points, f"xau-v2 sig {sg.channel}"[:31])
+            if not fill.ok:
+                log.warning("signal %s rejected (%s)", key, fill.retcode)
+                continue
+            open_sig += 1
+            self.risk.trades_today += 1
+            self._set_meta(fill.ticket, dict(atr=float(row["m5_atr"]) if row is not None else 3.0, open_ts=time.time(),
+                                             best=fill.price, side=sg.side, kind="signal", conf=0, tp=fill.price + sg.side * tp_d,
+                                             sl=fill.price - sg.side * sl_d, hold_min=float(getattr(sc, "hold_h", 8)) * 60,
+                                             channel=sg.channel, lots=lots))
+            self.store.record_trade(ticket=fill.ticket, symbol=self.gold, side="BUY" if sg.side > 0 else "SELL", lots=lots,
+                                    open_time=datetime.now(timezone.utc).isoformat(), open_price=fill.price,
+                                    sl=fill.price - sg.side * sl_d, tp=fill.price + sg.side * tp_d,
+                                    spread_at_entry=float(tick.ask - tick.bid), slippage=(fill.price - fill.requested) * sg.side,
+                                    confidence=0.0, session="signal", reason_open=f"signal:{sg.channel}", mode=self.mode)
+            self.tg.send(f"📡 {sg.channel}: {'BUY' if sg.side > 0 else 'SELL'} {lots} @ {fill.price:.2f} "
+                         f"SL {fill.price - sg.side * sl_d:.2f} TP {fill.price + sg.side * tp_d:.2f}")
+            log.info("signal trade %s %s lots=%s", key, fill.price, lots)
+        self.state["signals_done"] = sorted(done)[-500:]
+        self._save_state()
 
     def _turbo_mode(self) -> bool:
         return str(getattr(self.cfg.strategy, "mode", "scalp")).lower() == "turbo"

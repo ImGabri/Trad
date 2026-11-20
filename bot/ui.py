@@ -203,6 +203,9 @@ STYLES["hyperai"] = {"strategy": {"mode": "ai", "ai_gate": True, "ai_only_min_co
                                   "trail_distance_atr": 99.0, "equity_tp_pct": 0.0},
                      "risk": {"risk_per_trade_pct": 1.0, "max_concurrent": 3, "max_daily_trades": 200},
                      "analyst": {"veto_conf": 0.0}, "sessions": {"asia_enabled": True, "asia_min_confidence": 0.5}}
+# 📡 Signal Max 5: Hyper Max 5 + live Telegram signal channels (configured in the dashboard's Signal channels card).
+STYLES["signalmax5"] = {"strategy": dict(STYLES["hypermax5"]["strategy"]), "risk": dict(STYLES["hypermax5"]["risk"]),
+                        "signals": {"enabled": True}}
 STYLES["both"] = {"strategy": {"mode": "turbo", "turbo_direction": "both"}}
 BASKET_DEFAULT = {"candles_tf": "m5", "candles": 5, "follow": True, "step_atr": 0.75, "max_entries": 2, "tp_atr": 1.0,
                   "sl_atr": 6.0, "hold_minutes": 240, "equity_per_001": 50}
@@ -259,6 +262,9 @@ def _style() -> str:
                 rk = load_config(APP / "config.yaml").risk
                 if int(rk.max_concurrent) >= 5:
                     cs = getattr(rk, "conf_sizing", None)
+                    sg = getattr(load_config(APP / "config.yaml"), "signals", None)
+                    if sg is not None and getattr(sg, "enabled", False) and not (cs is not None and getattr(cs, "enabled", False)):
+                        return "signalmax5"
                     if cs is not None and getattr(cs, "enabled", False):
                         return "predictsafe" if float(getattr(cs, "sure_mult", 1.5)) >= 2.0 else "predictmax5"
                     return "hypermax5"
@@ -295,8 +301,17 @@ def state() -> dict:
         mt5_login=env.get("MT5_LOGIN", ""), mt5_server=env.get("MT5_SERVER", ""),
         stop_file=(DATA / "STOP").exists(), settings=_user_settings(),
         check=_read_json(DATA / "mt5_check.json"), style=_style(),
-        trades=_trades()[0], curve=_trades()[1], worker_log=_worker_log(),
+        trades=_trades()[0], curve=_trades()[1], worker_log=_worker_log(), signal_cfg=_signal_cfg(),
     )
+
+
+def _signal_cfg() -> dict:
+    try:
+        from config import load_config
+        sg = load_config(APP / "config.yaml").signals
+        return dict(enabled=bool(sg.enabled), channels=list(sg.channels or []), risk_pct=float(sg.risk_pct))
+    except Exception:  # noqa: BLE001
+        return {}
 
 
 def _worker_log(n: int = 6) -> list[str]:
@@ -380,7 +395,8 @@ def _write_user(updates: dict, replace: bool = False):
     import copy
     from config import _deep_update
     p = DATA / "user.yaml"
-    cur = {} if replace else ((yaml.safe_load(p.read_text()) if p.exists() else {}) or {})
+    old = (yaml.safe_load(p.read_text()) if p.exists() else {}) or {}
+    cur = ({"signals": old["signals"]} if "signals" in old else {}) if replace else old  # signal channels survive styles
     updates = copy.deepcopy(updates)
     _deep_update(cur, updates)
     DATA.mkdir(exist_ok=True)
@@ -442,6 +458,14 @@ def action(name: str, body: dict) -> str:
         return "Saved on this PC (.env). The bot will log MT5 in by itself after a reboot."
     if name == "settings":
         return _save_settings(body)
+    if name == "signals":  # 📡 follow public Telegram signal channels (works together with any breakout style)
+        chans = [c.strip().lstrip("@").split("/")[-1] for c in str(body.get("channels", "")).replace("\n", ",").split(",")]
+        chans = [c for c in chans if c and all(ch.isalnum() or ch == "_" for ch in c)][:12]
+        on = bool(body.get("enabled")) and bool(chans)
+        _write_user({"signals": {"enabled": on, "channels": chans,
+                                 "risk_pct": max(0.1, min(2.0, float(body.get("risk_pct", 0.5) or 0.5)))}})
+        return (f"📡 Following {len(chans)} channel(s): {', '.join(chans)}. Trades their signals live; a channel is "
+                f"muted automatically if its graded results are negative." if on else "📡 Signal channels off.") + _restart_if_running()
     if name == "style":
         style = body.get("style")
         if style not in STYLES:
@@ -452,6 +476,7 @@ def action(name: str, body: dict) -> str:
                "turbo": "🎯 Perfect: the best backtested strategy (hourly trend breakouts, 1 % risk). Use €100+.",
                "perfect": "🎯 Perfect: the best backtested strategy (hourly trend breakouts, 1 % risk). Use €100+.",
                "extreme": "☠️ Extreme: ~85 trades a day, buys AND sells with the last 2 candles. Lost money in every backtest period.",
+               "signalmax5": "📡 Signal Max 5: Hyper Max 5 plus live trades from your Telegram signal channels (set them in the Signal channels card).",
                "hyperai": "🤖 Hyper AI: pure AI, no rules — trades whenever the AI is ≥ 60 % sure. Lost money in backtests (demo experiment).",
                "predictsafe": "🔮🛡 Predict Max 5 Safe: both Hyper Max 5 and Predict Max 5 at once, at half risk with a wider stop. Worst backtest drop −78 % (−43 % in 2025–26).",
                "predictmax5": "🔮 Predict Max 5: Hyper Max 5 trades with the AI's prediction setting the size (1.5× when it agrees, 0.5× when not).",

@@ -266,6 +266,7 @@ body:not(.ready) #sig:empty{min-height:200px}
           <button data-v="hyperperfect" onclick="if(confirm('HYPER PERFECT: the Perfect breakout on 12h, 24h and 48h at the same time, up to 3 trades open (~2 trades a day, 3x Perfect). Backtest at €200, 1% risk: +116% (2019–23), +1,138% (2024–25), +602% (Aug 2025–Nov 2026) — profitable in every period, but drops of up to -83% along the way. Switch?'))act('style',{style:'hyperperfect'})" title="Faster Perfect: 3 breakout channels, up to 3 trades"><span class="sn">🎯⚡ Hyper Perfect</span><span class="st">3 channels · up to 3 trades</span></button>
           <button data-v="hypermax" onclick="if(confirm('HYPER MAX: Hyper + H4 plus three more breakout rules found by the strategy research — 20-day high (buy), previous-day high/low in the 4-hour trend direction (buy and sell), previous-week high (buy). Up to 3 trades, ~1.6 a day. Backtest at 1% risk: €200 +202% / +1,114% / +745%, €1,000 +176% / +591% / +140% (2019–23 / 2024–25 / 2025–26) — better than Hyper + H4 in every test. Drops of up to -72% along the way. Switch?'))act('style',{style:'hypermax'})" title="Best backtest of all styles"><span class="sn">🎯🔥 Hyper Max</span><span class="st">Best backtest · ~1.6 trades/day</span></button>
           <button data-v="hypermax5" onclick="if(confirm('HYPER MAX 5: Hyper Max with up to 5 trades open at once (~1.9 trades a day instead of ~1.6), each held up to 24 hours. Backtest at 1% risk: €200 +265% / +1,304% / +1,046%, €1,000 +356% / +956% / +352% (2019–23 / 2024–25 / 2025–26). Bigger swings: drops of up to -88% along the way. Faster rules (1–6 h channels, 15-min breakouts, Hyper dips) all blew €200 in 2019–23. Switch?'))act('style',{style:'hypermax5'})" title="Hyper Max with up to 5 trades"><span class="sn">🎯🔥⚡ Hyper Max 5</span><span class="st">Up to 5 trades · ~1.9/day</span></button>
+          <button data-v="signalmax5" onclick="if(confirm('SIGNAL MAX 5: Hyper Max 5 plus live trades from the Telegram signal channels you enter in the Signal channels card (0.5% risk each, max 2 open). Channel signals are graded on real prices and a losing channel is muted automatically. Signal channels have no verified track records — demo only. Switch?'))act('style',{style:'signalmax5'})" title="Hyper Max 5 + live Telegram signals"><span class="sn">📡 Signal Max 5</span><span class="st">Hyper Max 5 + live channel signals</span></button>
           <button data-v="predictsafe" onclick="if(confirm('PREDICT MAX 5 SAFE: Hyper Max 5 and Predict Max 5 combined (the same trades, AI sizes them 2.5x when it agrees / 1.5x when not) on a 0.5% base risk with a wider 4xATR stop and 40xATR target, held up to 24 h. Best of 81 risk/stop/target setups. Backtest (2019–23 / 2024–25 / Aug 2025–Jul 2026): €200 +317% / +1,168% / +1,220%, €1,000 +335% / +493% / +292%. Worst drop -78% (-43% in 2025–26). Switch?'))act('style',{style:'predictsafe'})" title="Hyper Max 5 + Predict Max 5 together, half risk"><span class="sn">🔮🛡 Predict Max 5 Safe</span><span class="st">Both combined · 0.5 % base · wide stop</span></button>
           <button data-v="predictmax5" onclick="if(confirm('PREDICT MAX 5: the same trades as Hyper Max 5, but the AI predicts the next 25 minutes and sets the size — 1.5x risk when it agrees with the breakout, 0.5x when it does not. Backtest with out-of-sample AI predictions (2019 → Jul 2026, 1% base risk): €200 +300% / +1,958% / +797%, €1,000 +328% / +719% / +469%. Better than Hyper Max 5 in 3 of 6 tests, slightly better overall; big swings (drops up to -78%). Switch?'))act('style',{style:'predictmax5'})" title="Hyper Max 5 + AI prediction sizing"><span class="sn">🔮 Predict Max 5</span><span class="st">Hyper Max 5 + AI sizing</span></button>
           <button data-v="hyperh4" onclick="if(confirm('HYPER PERFECT + H4 TREND: Hyper Perfect breakouts (12/24/48h, up to 3 trades), but only while the 4-hour chart is bullish — it sits out bearish 4-hour markets. Best of 32 tested combinations. Backtest at 1% risk: €200 +167% / +921% / +705%, €1,000 +79% / +507% / +96% (2019–23 / 2024–25 / 2025–26). Drops of up to -77% along the way. Switch?'))act('style',{style:'hyperh4'})" title="Hyper Perfect + 4-hour bull/bear filter"><span class="sn">🎯🐂 Hyper + H4</span><span class="st">Only in 4-hour uptrends</span></button>
@@ -308,6 +309,16 @@ body:not(.ready) #sig:empty{min-height:200px}
     <div class="note" id="chartNote">No closed trades yet.</div></section>
 
   <section class="card s5"><h2><svg class="ico"><use href="#i-pulse"/></svg>Market &amp; last signal</h2><div class="kv" id="sig"></div></section>
+
+  <section class="card s12" id="sigCard"><h2><svg class="ico"><use href="#i-pulse"/></svg>📡 Signal channels — live</h2>
+    <p class="muted" style="margin:0 0 10px;font-size:12.5px">Public Telegram channels the bot reads every ~20 s (no login). Order posts (price + SL/TP) are traded at once; zone posts when price taps the zone and an M1 candle confirms. Every signal is graded on real prices with your spread — a channel is muted automatically once 20 of its signals are graded and the average lost. Some signal sellers are on regulator warning lists (e.g. Callisto FX: UK FCA) — demo only.</p>
+    <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+      <input id="sigChannels" placeholder="channel names, e.g. callistofx, another_channel" style="flex:1;min-width:220px">
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px">Risk % <input id="sigRisk" type="number" step="0.1" min="0.1" max="2" value="0.5" style="width:70px"></label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px"><input id="sigOn" type="checkbox"> Follow live</label>
+      <button class="btn gold" onclick="act('signals',{channels:$('sigChannels').value,enabled:$('sigOn').checked,risk_pct:parseFloat($('sigRisk').value)})">Save</button></div>
+    <div class="tw"><table><thead><tr><th>Channel</th><th>Signals</th><th>Traded (graded)</th><th>Won</th><th>Avg / 0.01 lot</th><th>Status</th></tr></thead><tbody id="sigStats"><tr><td colspan="6" class="muted">Starts when the bot runs with channels switched on.</td></tr></tbody></table></div>
+    <div class="muted" id="sigRecent" style="font-size:12px;margin-top:8px"></div></section>
 
   <section class="card s12"><h2><svg class="ico"><use href="#i-layers"/></svg>Open trades</h2><div class="tw"><table><thead><tr><th>Ticket</th><th>Side</th><th>Lots</th><th>Open</th><th>SL</th><th>TP</th><th>Profit</th></tr></thead><tbody id="positions"></tbody></table></div></section>
 
@@ -400,7 +411,7 @@ if(s.stop_file||w.state==="killed"){head="Halted by kill switch";sub="Press “�
 if(smallTurbo)sub+=" ⚠ Under €100: each 0.01-lot trade risks a big part of the account (backtests: €50 blown in 2 of 3 periods, €100+ profitable in all).";
 $("headline").textContent=head;$("subline").textContent=sub;$("pillTxt").textContent=pill[0];$("pill").className="pill "+pill[1];
 document.body.classList.toggle("live",bg.background==="on"&&bg.worker==="running");
-paintSeg("modeSeg",bg.background==="on"?bg.mode:mode);paintSeg("styleSeg",s.style);paintPower();
+paintSeg("modeSeg",bg.background==="on"?bg.mode:mode);paintSeg("styleSeg",s.style);paintPower();try{renderSignals(s)}catch(e){}
 const eq=fresh?w.equity:(s.check||{}).equity;$("equity").textContent=money(eq,c);
 const t=w.today||{};$("today").textContent=t.pnl!=null&&fresh?signed(t.pnl,c)+" · "+(t.trades||0)+" trades":"–";$("today").className="d "+(t.pnl>0?"pos":t.pnl<0?"neg":"");
 const ck=s.check||{},conn=(fresh&&w.login)||ck.ok,steps=[
@@ -444,7 +455,8 @@ poll();setInterval(poll,2000);
 const RANK={predictsafe:{r:[317,1168,1220],d:1.9,w:-78},predictmax5:{r:[300,1958,797],d:1.84,w:-78},hypermax5:{r:[265,1304,1046],d:1.86,w:-88},
  hypermax:{r:[202,1114,745],d:1.6,w:-60},hyperh4:{r:[175,933,736],d:1.25,w:-69},hyperperfect:{r:[116,1138,602],d:1.7,w:-83},turbo:{r:[64,318,265],d:0.6,w:-62},
  both:{r:[null,565,915],d:0.9,w:-94,note:"€100 start"},active:{r:[null,null,null],d:3,est:1,w:-100},careful:{r:[null,null,null],d:1,est:1,w:-100},
- basket:{r:[null,null,null],d:4,est:1,w:-100},extreme:{r:[-88,-88,-88],d:85,w:-88},hyper:{r:[null,null,null],d:360,w:-100},hyperai:{r:[null,-28,2],d:0.5,est:1,w:-100}};
+ basket:{r:[null,null,null],d:4,est:1,w:-100},extreme:{r:[-88,-88,-88],d:85,w:-88},hyper:{r:[null,null,null],d:360,w:-100},hyperai:{r:[null,-28,2],d:0.5,est:1,w:-100},
+ signalmax5:{r:[265,1304,1046],d:1.86,w:-88,note:"Hyper Max 5 part; channel signals graded live"}};
 let rankKey="profit";try{rankKey=localStorage.getItem("rankKey")||"profit"}catch(e){}
 function growth(o){return o.r.reduce((g,x)=>g*(x==null?0:1+x/100),1)}
 function fmtR(x){return x==null?"blown":(x>0?"+":"")+x.toLocaleString("en")+"%"}
@@ -462,6 +474,15 @@ function rankStyles(k){rankKey=k;try{localStorage.setItem("rankKey",k)}catch(e){
  document.querySelectorAll("#rankBar button").forEach(b=>b.classList.toggle("on",b.dataset.k===k));
  if(S)paintSeg("styleSeg",S.style)}
 document.addEventListener("DOMContentLoaded",()=>rankStyles(rankKey));
+
+function renderSignals(s){const w=s.worker||{},sc=s.signal_cfg||{},sg=w.signals,tb=$("sigStats");if(!tb)return;
+ if(!sigLoaded&&sc.channels!==undefined){$("sigChannels").value=(sc.channels||[]).join(", ");$("sigOn").checked=!!sc.enabled;if(sc.risk_pct)$("sigRisk").value=sc.risk_pct;sigLoaded=true}
+ if(!sg){return}tb.innerHTML="";(sg.channels||[]).forEach(ch=>{const st=(sg.stats||{})[ch]||{},er=(sg.errors||{})[ch];const tr=document.createElement("tr");
+  const muted=st.traded>=sg.min_graded&&!st.follow;const cells=[ch,st.parsed??0,st.traded??0,st.win==null?"–":st.win+"%",st.avg_usd==null?"–":(st.avg_usd>0?"+":"")+"$"+st.avg_usd,
+   er?"⚠ "+er:muted?"🔇 muted (lost after costs)":st.follow?"✅ following (proven)":"👀 following · grading ("+(st.traded||0)+"/"+sg.min_graded+")"];
+  cells.forEach((v,i)=>{const td=document.createElement("td");td.textContent=v;if(i===4&&st.avg_usd!=null)td.style.color=st.avg_usd>0?"var(--ok)":"var(--bad)";tr.appendChild(td)});tb.appendChild(tr)});
+ $("sigRecent").textContent=(sg.recent||[]).length?"Latest: "+sg.recent.map(r=>r.time+" "+r.channel+" "+r.side+" "+r.zone+(r.target?" → "+r.target:"")).join("  ·  "):"No signals parsed yet."}
+let sigLoaded=false;
 </script>
 </body>
 </html>
