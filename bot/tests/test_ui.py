@@ -84,7 +84,9 @@ def test_style_presets_are_complete_and_detected(tmp_path, monkeypatch):
             elif style == "hyperai":
                 assert cfg.strategy.ai_only_min_conf == 0.6 and cfg.strategy.sl_atr == 1.5 and cfg.strategy.tp_atr == 3.0
             elif style.startswith("signalai"):
-                assert cfg.signals.ai_rate and list(cfg.signals.lanes) == ["max", "hyper"] and cfg.risk.max_concurrent == 1
+                assert cfg.signals.ai_rate and cfg.risk.max_concurrent == 1 and not cfg.risk.conf_sizing.enabled
+                assert list(cfg.signals.lanes) == (["max", "hyper"] if style == "signalai2x" else ["max"])
+                assert cfg.risk.risk_per_trade_pct == 1.0 and cfg.risk.max_daily_trades >= 300
             else:
                 assert cfg.strategy.sl_atr == (4.0 if style == "predictsafe" else 3.0) and cfg.strategy.tp_atr == 40.0 and not cfg.strategy.ai_gate
         assert bool(getattr(cfg.basket, "independent", False)) == (style == "hyper")
@@ -107,3 +109,14 @@ def test_style_presets_are_complete_and_detected(tmp_path, monkeypatch):
             assert cfg.signals.enabled and cfg.signals.tp_mode == "2r"
         else:
             assert not getattr(cfg.signals, "enabled", False), style   # other styles switch signals off
+
+
+def test_fresh_install_preselects_the_recommended_strategy(tmp_path, monkeypatch):
+    monkeypatch.setattr(ui, "DATA", tmp_path)
+    ui.first_run_defaults()
+    import yaml
+    u = yaml.safe_load((tmp_path / "user.yaml").read_text())
+    assert u["signals"]["ai_rate"] and u["signals"]["enabled"] and u["strategy"]["mode"] == "turbo"
+    (tmp_path / "user.yaml").write_text("strategy: {mode: scalp}\n")      # an existing choice is never overwritten
+    ui.first_run_defaults()
+    assert yaml.safe_load((tmp_path / "user.yaml").read_text()) == {"strategy": {"mode": "scalp"}}

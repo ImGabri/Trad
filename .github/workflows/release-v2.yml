@@ -32,10 +32,12 @@ jobs:
         run: |
           V=$(cat bot/VERSION | tr -d '\r\n')
           TAG="scalper-v$V"
+          NOTES="Download the zip, extract it and double-click START.cmd. Python and all libraries are bundled. See bot/README.md."
+          if [ -f bot/RELEASE_NOTES.md ]; then NOTES="$(cat bot/RELEASE_NOTES.md)"; fi
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" bot/dist/TradV2-XAUUSD-Scalper-Windows-x64.zip bot/dist/SHA256SUMS.txt --clobber
+            gh release edit "$TAG" --notes "$NOTES" --latest
           else
             gh release create "$TAG" bot/dist/TradV2-XAUUSD-Scalper-Windows-x64.zip bot/dist/SHA256SUMS.txt \
-              --target "$GITHUB_SHA" --title "TradV2 XAUUSD AI Scalper $V" \
-              --notes "Download the zip, extract it and double-click START.cmd. Python and all libraries are bundled. See bot/README.md."
+              --target "$GITHUB_SHA" --title "TradV2 XAUUSD AI Trader $V" --notes "$NOTES" --latest
           fi

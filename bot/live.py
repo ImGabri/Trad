@@ -549,6 +549,9 @@ class Runner:
             slippage_usd=self._expected_slippage(), bias=int(s["bias"]),
             outlook_dir=int(self.outlook.get("dir", 0)), outlook_conf=float(self.outlook.get("conf", 0.0)),
             news=self._fresh_news())
+        if positions and self.sbook is not None:  # signal trades have their own cap/risk: they never block the style's entries
+            _meta = self._pos_meta()
+            positions = [p for p in positions if (_meta.get(p.ticket) or {}).get("kind") != "signal"]
         ok, why2 = (False, "paused") if self.paused else self.risk.can_open(
             len(positions), side, [(1 if p.type == 0 else -1, p.profit) for p in positions])
         x = entry_features(row, side, p_up, kind) if side != 0 else None

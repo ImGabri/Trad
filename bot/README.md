@@ -1,9 +1,89 @@
-# TradV2 — XAUUSD AI Scalper for PU Prime MT5 (Windows 11, demo)
+# TradV2 — XAUUSD AI trader for PU Prime MT5 (Windows 11, demo)
 
-A self-learning gold scalper with a one-click dashboard. It trades XAUUSD on your PU Prime MT5 demo, runs in
-the background, restarts at every Windows logon and retrains itself every weekend on everything it has collected.
+A one-click gold trading bot: breakout strategies, an AI that rates Telegram channel signals, self-learning, a clean
+dashboard. It trades your PU Prime MT5 **demo** account in the background and refuses real-money accounts.
 
-## v2.22 — 🔮📡 Signal AI (winner of the €500 tournament)
+## Start (3 steps)
+
+1. Install **PU Prime MT5**, log in to your **demo** account with **Save password** ticked, and click **Algo Trading**
+   so it turns green.
+2. Download **[TradV2-XAUUSD-Scalper-Windows-x64.zip](https://github.com/ImGabri/Trad/releases/latest/download/TradV2-XAUUSD-Scalper-Windows-x64.zip)**,
+   right-click → **Extract All…** (e.g. to `C:\TradV2`) and double-click **START.cmd**. Python and every library are
+   included; the first start unpacks them in about 20 seconds.
+3. The dashboard opens with the recommended strategy (**🔮📡 Signal AI**) preselected and all its tested settings filled
+   in. Press **START**. The AI models are bundled, so it starts trading within a minute.
+
+You can close the browser tab: the bot keeps running, stops Windows from sleeping while it trades and restarts after every
+logon (opening MT5 itself if needed). **STOP** turns all of that off; **Close all & halt** is the kill switch.
+
+## Strategies (pick one in the dashboard — every one comes with its own tested settings)
+
+Backtests use real PU Prime Standard costs ($0.32 spread), the bot's own code and the built-in news calendar.
+"Dec 2025 – Nov 2026" is the only window that has channel signals with walk-forward AI ratings.
+
+| Strategy | What it does | Backtest |
+|---|---|---|
+| 🔮📡 **Signal AI** (recommended) | 🎯 Perfect breakouts + the Telegram signals the signal-rating AI expects to win (near entry, out after 8 h; 2× size on its top picks) | Dec 2025 – Nov 2026: €200 **+1,709 %** (worst −49 %) · €500 **+1,587 %** (−35 %) · €1,000 **+1,287 %** (−28 %); profitable in both halves |
+| 🔮📡🔥 **Signal AI ×2** | the same plus a second lane (any distance, 24 h) | €200 +7,243 % (−57 %) · €500 +4,560 % (−58 %) · €1,000 +2,231 % (−60 %) |
+| 🎯 **Perfect** | buys the first break of the 24-hour high in an hourly uptrend, 1 % risk | €200: 2019–23 +64 % · 2024–25 +318 % · 2025–26 +265 % |
+| 🎯🔥 **Hyper Max** | Perfect on 12/24/48 h channels + 4-hour trend + 20-day / previous-day / previous-week breakouts, up to 3 trades | €200: +202 % · +1,114 % · +745 % |
+| 🎯🔥⚡ **Hyper Max 5** | Hyper Max with up to 5 trades, held up to 24 h | €200: +265 % · +1,304 % · +1,046 % (but only +54 % / −82 % in Dec 2025 – Nov 2026) |
+| 🔮 **Predict Max 5** / 🔮🛡 **Safe** | Hyper Max 5 sized by the 25-minute price AI | €200: +300 % · +1,958 % · +797 % |
+| 📡 **Signal Max 5 / Signal Hyper (Max 5)** | earlier channel-signal styles without the rating AI | superseded by Signal AI |
+| ⚡ Active · 🛡 Careful · 🧺 Basket · ☠️ Extreme · 💀 Hyper · 🤖 Hyper AI | scalping experiments | **lost money in every backtest** — the spread is bigger than the edge in 1-minute moves |
+
+The dashboard can rank all strategies by **profit**, **trades per day** or **safety** and shows each one's numbers.
+
+## How 🔮📡 Signal AI works
+
+* **Signals:** the bot reads public gold signal channels every ~20 s (Telegram web preview, no login): Forexstar_Gold,
+  UnitedKingsOfficial, EliteGoldTraders03, AnabelSignals, xauusd_signals, GoldPrincess, callistofx — editable in
+  **Signal channels**. Order posts (price + SL/TP) are traded at once; zone posts when price taps the zone and a 1-minute
+  candle confirms. Targets are 2 × the risk (optimised; the channels' own TP1 was worse).
+* **The rating AI** (gradient-boosted, one model per lane) predicts the $ result of each signal after costs from: the
+  channel, buy/sell, how far price already moved from the entry, stop size, posted reward:risk, 1 h / 4 h trend
+  agreement, momentum, volatility, time of day/week and the channel's recent record. It trades only signals it expects to
+  win and doubles the size on the best ones. It ships trained on 4,015 graded trades of 7 channels and retrains on every
+  new live result. Walk-forward it lifted the channel trades from +$1,080 to +$1,681 per 0.01 lot on half as many trades.
+* **Channel track records** (all signals graded on real prices, $ per 0.01 lot): UnitedKingsOfficial +$1,316 ·
+  Forexstar_Gold +$390 · EliteGoldTraders03 +$295 · AnabelSignals +$45 · GoldPrincess −$82 · xauusd_signals −$107 ·
+  **Callisto FX −$489** (on the UK FCA warning list; the AI skips it).
+* **Risk:** 1 % per signal trade (2 % on top-rated ones), at most 10 open, separate from the breakout trades; the news
+  calendar pauses new entries around NFP / CPI / FOMC.
+
+## Honest expectations
+
+* The channel data covers 2025–26 only — essentially one strong gold year — and ~250 combinations were compared, so part
+  of the backtest edge is luck. Channels' own claims are unverified.
+* Drawdowns of −30 % to −60 % happened along the way even in the best runs. Treat the demo as the real test.
+* The bot never trades a real-money account.
+
+## Troubleshooting
+
+* **"Starting… Connecting to MT5"**: the dashboard shows each startup step. If MT5 does not answer within 90 s you get a
+  clear message — open MT5, close any pop-up, make sure you are logged in, then STOP and START. If the background bot
+  stops answering, the dashboard shows its last log lines.
+* **Daily loss halt / kill switch**: press **🔄 Reset daily limits & stops**.
+* **Logs**: Logs button (or `data\logs\`). **Settings** you change in the dashboard override the strategy preset until you
+  pick a strategy again.
+
+## Files
+
+`START.cmd` opens the dashboard · `MENU.cmd` opens the advanced text menu · `config.yaml` holds every setting (the
+dashboard writes your choices to `data\user.yaml`) · `data\report\report.html` is the latest backtest report ·
+`data\logs\` keeps JSON logs for 7 days · `data\signals\` keeps parsed and graded channel signals.
+
+```bash
+runtime\python.exe main.py doctor
+runtime\python.exe main.py smoke
+runtime\python.exe main.py kill
+```
+
+---
+
+## History — every version with its research and backtests
+
+### v2.22 — 🔮📡 Signal AI (winner of the €500 tournament)
 
 **The signal-rating AI.** Before trading, it rates every channel signal with a gradient-boosted model, one per lane.
 - **What it reads:** the channel, buy/sell, how far price already is from the posted entry, stop size, posted
@@ -41,7 +121,7 @@ the background, restarts at every Windows logon and retrains itself every weeken
   - About 150 combinations were compared, so some of the edge is selection luck.
   - Channels have no verified records of their own.
 
-## v2.21 — 📡 live Telegram signals with a learning signal AI
+### v2.21 — 📡 live Telegram signals with a learning signal AI
 
 **What it does:** the bot reads public gold signal channels live, about every 20 s, without a login.
 - **Pre-filled channels:** Forexstar_Gold, UnitedKingsOfficial, EliteGoldTraders03, AnabelSignals,
@@ -84,7 +164,7 @@ the background, restarts at every Windows logon and retrains itself every weeken
   Signal Hyper Max 5 made +3,818 % at €200.
 - **Short history:** channel data only covers 2025–26.
 
-## v2.20 — 🤖 Hyper AI and a ranked style list
+### v2.20 — 🤖 Hyper AI and a ranked style list
 
 - **Ranked style list:** the style buttons can be ranked by **🏆 Best profit**, **⚡ Most trades/day** or
   **🛡 Safest**.
@@ -100,7 +180,7 @@ the background, restarts at every Windows logon and retrains itself every weeken
   - **Why:** the AI is right only about 51.5 % of the time, which is not enough to beat the spread on its own. It is
     a demo experiment.
 
-## v2.19 — 🔮🛡 Predict Max 5 Safe
+### v2.19 — 🔮🛡 Predict Max 5 Safe
 
 **What it is:** Hyper Max 5 and Predict Max 5 at the same time, made safe. Both take the same trades, so "both at
 once" means one trade sized **2.5 ×** risk when the AI agrees and **1.5 ×** when it does not.
@@ -122,7 +202,7 @@ Checked end to end through the app's own code, with out-of-sample AI predictions
 **Fix:** style presets may now set their own stop and target in Perfect/Hyper modes. Before this, they were
 replaced by the default 3 / 40 × ATR.
 
-## v2.18 — 🔮 Predict Max 5
+### v2.18 — 🔮 Predict Max 5
 
 **What it is:** Hyper Max 5's trades, with the AI's prediction of the next 25 minutes setting the size. It risks
 **1.5 ×** when the AI agrees with the breakout and **0.5 ×** when it does not.
@@ -142,7 +222,7 @@ walk-forward predictions (the model never saw those prices). The test runs from 
   edge, not a reliable one.
 - **Drawdowns:** still large, up to −78 %.
 
-## v2.17 — re-optimised Hyper Max 5, and a faster bot
+### v2.17 — re-optimised Hyper Max 5, and a faster bot
 
 **Hyper Max 5 exits re-optimised.** 28 exit and risk variants were tested: stop 2–4 × ATR, target 20/40 × ATR,
 trailing on/off, 15 h vs 24 h hold, and 0.75 / 1 / 1.5 % risk. The winner was chosen on 2019–25 only and then
@@ -173,7 +253,7 @@ The change: **hold trades up to 24 h instead of 15 h.**
 - **Symbol list:** the MT5 symbol list is read once per connection.
 - **Database:** position data is only written when it changes, instead of twice a second.
 
-## v2.16 — 🎯🔥⚡ Hyper Max 5 (faster Hyper Max)
+### v2.16 — 🎯🔥⚡ Hyper Max 5 (faster Hyper Max)
 
 **What was tested:** 21 faster versions of Hyper Max, each at up to 3, 5 or 8 open trades, at €200 and €1,000,
 with the news calendar on.
@@ -196,7 +276,7 @@ but they were small, noisy breakouts.
 **The trade-off:** much more profit in 2024–26, slightly less in the choppy 2019–23 period, and deeper drops
 (up to −85 % at €1,000).
 
-## v2.15.1 — startup diagnostics + backtest of the shipped code
+### v2.15.1 — startup diagnostics + backtest of the shipped code
 
 - **Startup screen:** the dashboard now shows each startup step with a timer.
 - **MT5 hang:** the bot gives up after 90 s with a clear message instead of hanging on "Connecting to MT5…".
@@ -222,7 +302,7 @@ backtest engine, with real Standard costs and the built-in news calendar, 1 % ri
   style. Its no-trade windows before and after NFP / CPI / FOMC are essential, so keep them on.
 - **Asia session:** turning off Asia-hours trading made every style worse, so it stays on.
 
-## v2.15 — 🎯🔥 Hyper Max, new dashboard, and 1,000+ more strategy tests
+### v2.15 — 🎯🔥 Hyper Max, new dashboard, and 1,000+ more strategy tests
 
 **How the research was done:** four agents worked in parallel.
 - One read what gold day traders and quant researchers report online (28 strategies, with sources).
@@ -269,7 +349,7 @@ Hyper + H4 plus:
 - **Tables:** BUY/SELL chips.
 - **Phones:** no sideways scrolling.
 
-## v2.14 — 🎯🐂 Hyper + H4: bull/bear identifier on the 4-hour chart
+### v2.14 — 🎯🐂 Hyper + H4: bull/bear identifier on the 4-hour chart
 
 **Tested:** 32 combinations.
 - **Trend identifiers:** H4 EMA 20/50, H4 EMA 50/200, D1 EMA 20/50, or none.
@@ -301,7 +381,7 @@ it sits out bearish 4-hour markets.
 - **Live trend source:** the bot reads the 4-hour trend from about 800 hourly MT5 bars. Checked against the full
   history, it agreed at 300 of 300 random moments.
 
-## v2.13 — 🎯⚡ Hyper Perfect (faster Perfect that still made money)
+### v2.13 — 🎯⚡ Hyper Perfect (faster Perfect that still made money)
 
 - **How it trades:** the same breakout as Perfect, but it watches the **12-hour, 24-hour and 48-hour** highs at once
   and can hold **up to 3 trades**. That is about 1.6–1.8 trades a day, roughly 3 × Perfect.
@@ -322,7 +402,7 @@ it sits out bearish 4-hour markets.
 - **Other combinations tested:** adding 6-hour channels, sells or 15-minute channels made it faster but **blew
   €200** in 2019–23.
 
-## v2.12 — 🧠 trade memory: learns from its own wins and losses while trading
+### v2.12 — 🧠 trade memory: learns from its own wins and losses while trading
 
 **How it learns:** after every closed trade, the bot files the result under its situation: BUY or SELL × session
 (Asia / London / London–NY overlap / New York) × volatility (calm / normal / wild).
@@ -349,7 +429,7 @@ Backtest results:
 So the memory trims Hyper down to mostly re-tests, and it loses about 7 × less per day. It still does not turn
 Hyper into a winner.
 
-## v2.11 — bigger lots on surer trades (🎯 Perfect)
+### v2.11 — bigger lots on surer trades (🎯 Perfect)
 
 - **How it sizes trades:** Perfect now risks **1.5 × your Risk %** when the AI agrees with the breakout and
   **0.5 ×** when it does not.
@@ -366,7 +446,7 @@ Hyper into a winner.
 - **Fast trades — tested, not used:** I tested the same idea on 💀 Hyper and every-minute AI trades. Even the AI's
   most confident minutes lost about $0.35 per trade, so bigger lots there only lose faster.
 
-## v2.10 — directional 💀 Hyper
+### v2.10 — directional 💀 Hyper
 
 - **What changed:** Hyper now only trades **with the hourly trend**. In an uptrend it buys when a 1-minute candle
   dips, and in a downtrend it sells when one rises. Up to 3 trades are open at once (about 360 a day). Each trade
@@ -377,7 +457,7 @@ Hyper into a winner.
   0.01-lot trade (the old Hyper lost $0.41–$0.45). That is roughly −$120 a day, so €200 was still blown in every
   period. The spread ($0.32 a trade) is bigger than any edge found in 1-minute candles.
 
-## Start (3 steps)
+### Start (3 steps)
 
 1. Install **PU Prime MT5**, log in to your **demo** account with **Save password** ticked, and click
    **Algo Trading** so it turns green.
@@ -392,7 +472,7 @@ tab: the bot keeps running, stops Windows from going to sleep while it trades, a
 (launching MT5 itself if needed). **■ Stop** turns all of that off.
 **Close all & halt** is the kill switch. Telegram `/stop` or an empty `data\STOP` file do the same.
 
-## How it trades
+### How it trades
 
 | | |
 |---|---|
@@ -402,7 +482,7 @@ tab: the bot keeps running, stops Windows from going to sleep while it trades, a
 | News | Verified 2019–2026 US calendar (NFP, CPI, PPI, FOMC, retail sales, GDP, PCE, JOLTS, ISM) plus a live ForexFactory feed. No entries 15→5 min before an event (stops tightened). One AI "news scalp" in the ±5 min window. Wider stops for 15 min after. |
 | Risk | 0.5 % per trade. Small-account mode trades 0.01 lot when that risks ≤ 10 % (a €50 start). 15 % daily loss halt, max 2 open / 20 trades a day, spread and slippage filters, survival hard stop, no averaging down, demo accounts only. |
 
-## v2.9.1 — 🔄 Reset button
+### v2.9.1 — 🔄 Reset button
 
 **🔄 Reset daily limits & stops** is in Setup (Telegram: `/reset`).
 - **What it clears:**
@@ -411,7 +491,7 @@ tab: the bot keeps running, stops Windows from going to sleep while it trades, a
   - It clears the kill switch, the survival stop and the drift pause.
 - **When it applies:** within a second if the bot is running. Open trades are not touched.
 
-## v2.9 — buys AND sells
+### v2.9 — buys AND sells
 
 - **☠️ Extreme and 💀 Hyper now trade with the candles.**
   - **What changed:** they used to bet against the last candles, so on a falling chart they kept buying.
@@ -430,7 +510,7 @@ tab: the bot keeps running, stops Windows from going to sleep while it trades, a
   - **How it compares:** it beat buy-only Perfect in 2025–26, but it lost money in the choppier 2019–23 years.
     🎯 Perfect (buy-only) stays the default.
 
-## v2.7 — 🎯 Perfect, ☠️ Extreme and 30 more markets
+### v2.7 — 🎯 Perfect, ☠️ Extreme and 30 more markets
 
 - **🎯 Perfect** (the default style) is the best strategy found in all backtests, Turbo with its tested settings.
   Press **▶ Start** and it does everything else. Choosing any style button clears old manual tweaks so the preset
@@ -464,7 +544,7 @@ tab: the bot keeps running, stops Windows from going to sleep while it trades, a
   - **Which markets count:** each market is only used if your PU Prime server offers it. The AI starts using
     them at its next retrain (every weekend, or **Retrain AI now**).
 
-## v2.6 — Turbo is now the default (best of 768 variants)
+### v2.6 — Turbo is now the default (best of 768 variants)
 
 **Turbo:**
 - **Entry:** buys the first break above the highest high of the last 24 hourly bars, only while the hourly EMA20 is
@@ -494,7 +574,7 @@ feeds), MarketWatch, BBC Business, the Financial Times, FXEmpire, Seeking Alpha,
 releases. It removes stories repeated across outlets and scores the gold impact. It only vetoes a trade on a strong
 opposite reading.
 
-## 🚀 Turbo — the fastest €50 growth found
+### 🚀 Turbo — the fastest €50 growth found
 
 Research on 7.9 years of data tested about 4,000 variants of 1-minute and 15-minute scalping, your dip-buying
 basket, session breakouts, news momentum and trend-following. Each method then ran a "€50 race": 150 random
@@ -518,7 +598,7 @@ Caveats:
 - **One full stop-loss can cost up to about half of a €50 account.**
 - **Switching it on:** press 🚀 Turbo in the dashboard. Active or Careful switch back to scalping.
 
-## Backtest by account size (Jan 2024 → May 2026, real Standard costs, lots grow with the account)
+### Backtest by account size (Jan 2024 → May 2026, real Standard costs, lots grow with the account)
 
 | Start | 🚀 Turbo → end | Turbo max drawdown | ⚡ Active scalping | 🧺 Basket |
 |---|---|---|---|---|
@@ -533,7 +613,7 @@ Caveats:
 - **Larger accounts use 0.5 % risk per trade** (adjustable in Settings).
 - **Turbo depends on the market direction:** it only buys, and this period was gold's bull market.
 
-## 🧺 Basket (opt-in, demo experiment)
+### 🧺 Basket (opt-in, demo experiment)
 
 - **How it trades:**
   - Buys after 5 rising 5-minute candles and sells after 5 falling ones.
@@ -544,7 +624,7 @@ Caveats:
   of baskets but loses about $0.36 per basket on average, and it lost at every account size above.
 - **Settings:** the `basket:` section in config.yaml.
 
-## Market analyst — "what happens next?"
+### Market analyst — "what happens next?"
 
 * **15-minute chart model:** it reads the 15-minute chart (trend, momentum, volatility, where price sits in the
   day's range), the hourly trend, silver, the dollar, Nasdaq and the news calendar, and predicts the next 60 minutes.
@@ -556,14 +636,14 @@ Caveats:
   avoid). "Avoid" pauses new entries around high-impact releases, and a strong opposite reading vetoes a trade. Each
   call is graded 60 minutes later.
 
-## Proving real demo trades
+### Proving real demo trades
 
 * **Place test trade** (dashboard → Setup) opens a 0.01-lot BUY on your demo with a broker-side SL/TP, checks it,
   and closes it after 5 seconds. It reports fill price, speed and P&L.
 * **⚡ Active** style (default) trades every rule setup the AI agrees with (a few trades a day). **🛡 Careful** only
   takes high-confidence setups. If MT5 rejects a filling mode, orders retry with another one automatically.
 
-## How it learns from itself
+### How it learns from itself
 
 * **Keeps all data:** your broker's bars, every tick spread, every AI prediction and every trade with its entry
   conditions go into `data\xau.db`. Older years come from a public OANDA M1 dataset, cached in `data\hf_cache`.
@@ -578,14 +658,14 @@ Caveats:
   period. Each old model is archived in `data\models\`, and every retrain is logged in `data\learning_log.jsonl`.
 * **Drift guard:** it pauses entries if the live win rate falls 15 points below the backtest (`/resume` to override).
 
-## Honest expectations
+### Honest expectations
 
 On a Standard account every trade pays a fixed **$0.32** spread. With €50 the smallest trade (0.01 lot = 1 oz)
 already risks ~7 % at a normal stop. The research on 7.9 years of data (see the report) shows how hard it is to beat
 those costs. The bot adopts tuned rules only when they pass the validation test, and the dashboard shows whether
 they did. Treat the demo as the real test. The bot refuses real-money accounts.
 
-## Files
+### Files
 
 `START.cmd` opens the dashboard · `MENU.cmd` opens the advanced text menu · `config.yaml` holds every setting (the
 dashboard's settings override it via `data\user.yaml`) · `data\report\report.html` is the latest backtest report ·

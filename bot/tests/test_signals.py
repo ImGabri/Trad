@@ -145,3 +145,44 @@ def test_signal_ai_rates_each_lane_and_trades_the_approved_ones(tmp_path, monkey
     assert len(sig_orders) == 1 and "sigh" in sig_orders[0]["comment"] and sig_orders[0]["type"] == 1
     trades = pd.read_sql_query("SELECT reason_open, confidence FROM trades", r.store.conn)
     assert "signal:testch:hyper" in trades.reason_open.tolist()
+
+
+def test_open_signal_trades_do_not_block_the_styles_own_entries(tmp_path, monkeypatch):
+    m1 = synthetic_m1(days=40, seed=5)
+    mod = fake_mt5.install(m1, start_bar=20000)
+    for name in ("data", "execution", "live"):
+        if name in sys.modules:
+            importlib.reload(sys.modules[name])
+    import signals
+    monkeypatch.setattr(signals, "fetch_channel", lambda ch, pages=1, **kw: [])
+    from config import load_config
+    from features import build_features
+    from ai_model import DirectionModel
+    import live, ui, execution as ex
+    ov = dict(ui.STYLES["signalai"]); ov["signals"] = dict(ov["signals"], channels=["testch"])
+    cfg = load_config(ROOT / "config.yaml", use_tuned=False, overrides=ov)
+    cfg.broker.server_utc_offset_hours = 2
+    DirectionModel.fit(build_features(m1.iloc[:20000], cfg), cfg, rounds=40).save(tmp_path / "data" / "model")
+    seen = []
+    n = {"i": 0}
+    def keep():
+        n["i"] += 1
+        if n["i"] == 2:  # a signal trade is open (tagged kind=signal), same side as a possible breakout
+            f = ex.open_market(r.gold, 1, 0.01, 5.0, 10.0, r.dev_points, "xau-v2 sig test")
+            r._set_meta(f.ticket, dict(atr=2.0, open_ts=live.time.time(), best=f.price, side=1, kind="signal", lots=0.01))
+        return n["i"] < 12
+    r = live.Runner(cfg, tmp_path, "demo", keep)
+    r.events = pd.DatetimeIndex([], tz="UTC"); r.last_cal = 1e18
+    real_can_open = r.risk.can_open
+    def spy(open_positions, side, sides_pnl):
+        seen.append((open_positions, len(sides_pnl)))
+        return real_can_open(open_positions, side, sides_pnl)
+    r.risk.can_open = spy
+    real_sleep = live.time.sleep; live.time.sleep = lambda s: None
+    try:
+        r.run()
+    finally:
+        live.time.sleep = real_sleep
+    kinds = [m.get("kind") for m in r._pos_meta().values()]
+    assert "signal" in kinds, kinds                          # the signal trade really was open during the run
+    assert seen and all(c == (0, 0) for c in seen), seen      # … and was never counted against the style

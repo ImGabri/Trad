@@ -213,16 +213,17 @@ STYLES["hyperai"] = {"strategy": {"mode": "ai", "ai_gate": True, "ai_only_min_co
 #   Results are very start-date sensitive: from 21 Jul 2025 the same Hyper Max 5 + Signal Hyper made +3,818 % at €200.
 SIG_MAX = {"enabled": True, "max_away": 5.0, "tp_mode": "2r", "hold_h": 8, "max_open": 5, "risk_pct": 0.5}
 SIG_HYPER = {"enabled": True, "max_away": 1e9, "tp_mode": "2r", "hold_h": 24, "max_open": 10, "risk_pct": 0.5}
-# 🔮📡 Signal AI — winner of the €500 tournament (4 rounds, 30 + 30 + 30 + 60 combinations, Dec 2025 – Nov 2026; AI ratings
-# walk-forward). Base 🎯 Perfect + every channel signal traded in two lanes (Max: ≤ $5 away, 8 h; Hyper: any distance,
-# 24 h), each lane only if the signal-rating AI expects > $0 after costs. Profitable in both halves of the window.
-#   Signal AI (calm):  Perfect 1 % + signals 1 %                         → €500 +1,171 % (dd −38 %); Dec–May +156 %, Jun–Nov +477 %
-#   Signal AI ×2:      Perfect 1.5 % + signals 1 %, ×2 if AI > $0.5     → €500 +4,309 % (dd −62 %); Dec–May +182 %, Jun–Nov +2,755 %
-SIG_AI = {"enabled": True, "lanes": ["max", "hyper"], "ai_rate": True, "ai_threshold": 0.0, "tp_mode": "2r",
-          "risk_pct": 1.0, "boost_mult": 1.0, "boost_above": 0.5, "max_open": 10}
-STYLES["signalai"] = {"strategy": dict(STYLES["perfect"]["strategy"]), "risk": {"risk_per_trade_pct": 1.0}, "signals": dict(SIG_AI)}
-STYLES["signalai2x"] = {"strategy": dict(STYLES["perfect"]["strategy"]), "risk": {"risk_per_trade_pct": 1.5},
-                        "signals": dict(SIG_AI, boost_mult=2.0)}
+# 🔮📡 Signal AI — winners of the €500 tournament (5 rounds, ~250 combinations, Dec 2025 – Nov 2026, AI ratings walk-forward,
+# max 10 open signal trades). Base 🎯 Perfect 1 % + channel signals rated by the signal AI (1 % risk each, 2 × size when the AI
+# expects > $0.5). Final check, both profitable in BOTH halves at every size (total, worst drawdown):
+#   Signal AI:     Max lane (≤ $5 from entry, 8 h), AI > $0.25  → €200 +1,709 % (−49 %) · €500 +1,587 % (−35 %) · €1,000 +1,287 % (−28 %)
+#   Signal AI ×2:  Max + Hyper lanes (any distance, 24 h), AI > $0 → €200 +7,243 % (−57 %) · €500 +4,560 % (−58 %) · €1,000 +2,231 % (−60 %)
+SIG_AI = {"enabled": True, "lanes": ["max"], "ai_rate": True, "ai_threshold": 0.25, "tp_mode": "2r",
+          "risk_pct": 1.0, "boost_mult": 2.0, "boost_above": 0.5, "max_open": 10}
+_SIG_AI_RISK = {"risk_per_trade_pct": 1.0, "max_daily_trades": 300, "conf_sizing": {"enabled": False}}
+STYLES["signalai"] = {"strategy": dict(STYLES["perfect"]["strategy"]), "risk": dict(_SIG_AI_RISK), "signals": dict(SIG_AI)}
+STYLES["signalai2x"] = {"strategy": dict(STYLES["perfect"]["strategy"]), "risk": dict(_SIG_AI_RISK),
+                        "signals": dict(SIG_AI, lanes=["max", "hyper"], ai_threshold=0.0)}
 STYLES["signalmax5"] = {"strategy": dict(STYLES["hypermax5"]["strategy"]), "risk": dict(STYLES["hypermax5"]["risk"]),
                         "signals": dict(SIG_MAX)}
 STYLES["signalhyper"] = {"strategy": {"mode": "signals", "ai_gate": False, "ai_only_min_conf": 0.0, "equity_tp_pct": 0.0},
@@ -232,6 +233,8 @@ STYLES["signalhypermax5"] = {"strategy": dict(STYLES["hypermax5"]["strategy"]), 
                              "signals": dict(SIG_HYPER)}
 STYLES["signalhypermax5x2"] = {"strategy": dict(STYLES["hypermax5"]["strategy"]),
                                "risk": dict(STYLES["hypermax5"]["risk"], risk_per_trade_pct=2.0), "signals": dict(SIG_HYPER)}
+for _k in ("signalmax5", "signalhyper", "signalhypermax5", "signalhypermax5x2"):   # signal styles: channel trades count
+    STYLES[_k]["risk"] = dict(STYLES[_k].get("risk", {}), max_daily_trades=300, daily_loss_limit_pct=30)  # toward daily limits
 STYLES["both"] = {"strategy": {"mode": "turbo", "turbo_direction": "both"}}
 BASKET_DEFAULT = {"candles_tf": "m5", "candles": 5, "follow": True, "step_atr": 0.75, "max_entries": 2, "tp_atr": 1.0,
                   "sl_atr": 6.0, "hold_minutes": 240, "equity_per_001": 50}
@@ -284,7 +287,7 @@ def _style() -> str:
     st = load_config(APP / "config.yaml").strategy
     sgc = getattr(load_config(APP / "config.yaml"), "signals", None)
     if sgc is not None and getattr(sgc, "enabled", False) and getattr(sgc, "ai_rate", False):
-        return "signalai2x" if float(getattr(sgc, "boost_mult", 1)) > 1 else "signalai"
+        return "signalai2x" if "hyper" in [str(x) for x in (getattr(sgc, "lanes", None) or [])] else "signalai"
     if str(getattr(st, "mode", "scalp")) == "turbo":
         if len(getattr(st, "turbo_lookbacks", None) or [24]) > 1:
             if getattr(st, "turbo_extras", None):
@@ -324,6 +327,7 @@ def state() -> dict:
     opt = (summ.get("optimization") or {}) if summ else {}
     chosen = (opt.get("chosen") or {}).get("validate") if opt else None
     env = _env()
+    tr = _trades()  # one DB read per refresh (was two)
     return dict(
         version=(APP / "VERSION").read_text().strip() if (APP / "VERSION").exists() else "dev",
         background=background.status(APP), worker=Status.read(DATA / "status.json"), job=JOB.state(),
@@ -334,7 +338,7 @@ def state() -> dict:
         mt5_login=env.get("MT5_LOGIN", ""), mt5_server=env.get("MT5_SERVER", ""),
         stop_file=(DATA / "STOP").exists(), settings=_user_settings(),
         check=_read_json(DATA / "mt5_check.json"), style=_style(),
-        trades=_trades()[0], curve=_trades()[1], worker_log=_worker_log(), signal_cfg=_signal_cfg(),
+        trades=tr[0], curve=tr[1], worker_log=_worker_log(), signal_cfg=_signal_cfg(),
     )
 
 
@@ -513,8 +517,8 @@ def action(name: str, body: dict) -> str:
                "turbo": "🎯 Perfect: the best backtested strategy (hourly trend breakouts, 1 % risk). Use €100+.",
                "perfect": "🎯 Perfect: the best backtested strategy (hourly trend breakouts, 1 % risk). Use €100+.",
                "extreme": "☠️ Extreme: ~85 trades a day, buys AND sells with the last 2 candles. Lost money in every backtest period.",
-               "signalai": "🔮📡 Signal AI: Perfect + every channel signal in two lanes, each only if the rating AI expects a profit (€500 backtest +1,171 %, worst −38 %).",
-               "signalai2x": "🔮📡🔥 Signal AI ×2: the same with 1.5 % breakouts and double size on the AI's top-rated signals (€500 +4,309 %, worst −62 %).",
+               "signalai": "🔮📡 Signal AI: Perfect + the channel signals the rating AI likes (near entry, 8 h; 2× on its top picks). €500 backtest +1,587 %, worst −35 %.",
+               "signalai2x": "🔮📡🔥 Signal AI ×2: Perfect + AI-rated signals in both lanes (near entry 8 h + any distance 24 h). €500 backtest +4,560 %, worst −58 %.",
                "signalmax5": "📡 Signal Max 5: Hyper Max 5 plus live channel signals (≤ $5 from entry, 2R, 8 h).",
                "signalhyper": "📡 Signal Hyper: trades EVERY channel signal (2R target, 24 h) — no own entries.",
                "signalhypermax5": "📡🔥 Signal Hyper Max 5: Hyper Max 5 + every channel signal. Best at €1,000+ (+540 %, worst −39 %); it blew €200 in the backtest.",
@@ -642,6 +646,16 @@ def make_shortcuts():
         log.warning("shortcut creation failed: %s", e)
 
 
+DEFAULT_STYLE = "signalai"  # preselected on a fresh install: best profit/drawdown balance at €200, €500 and €1,000
+
+
+def first_run_defaults() -> None:
+    """Fresh install (no data/user.yaml yet): preselect the recommended strategy with its tested settings.
+    Existing installs keep whatever the user chose."""
+    if not (DATA / "user.yaml").exists():
+        _write_user(STYLES[DEFAULT_STYLE], replace=True)
+
+
 def serve(open_browser: bool = True, idle_minutes: int = 30):
     url = f"http://127.0.0.1:{PORT}/"
     if _already_running():
@@ -649,6 +663,7 @@ def serve(open_browser: bool = True, idle_minutes: int = 30):
             webbrowser.open(url)
         return
     DATA.mkdir(exist_ok=True)
+    first_run_defaults()
     Handler.token = secrets.token_urlsafe(24)
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     srv.daemon_threads = True
