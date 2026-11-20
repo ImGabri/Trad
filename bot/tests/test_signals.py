@@ -90,7 +90,8 @@ def test_live_bot_trades_a_posted_order_signal(tmp_path, monkeypatch):
     sig_orders = [o for o in mod._fake.orders if "sig" in str(o.get("comment", ""))]
     assert sig_orders, "the posted signal was not traded"
     o = sig_orders[0]
-    assert o["type"] == 0 and abs(o["sl"] - (price - 6)) < 1.5 and abs(o["tp"] - (price + 9)) < 1.5
+    assert o["type"] == 0 and abs(o["sl"] - (price - 6)) < 1.5             # the channel's stop …
+    assert abs((o["tp"] - o["price"]) - 2 * (o["price"] - o["sl"])) < 0.05   # … and the optimised 2R target (tp_mode 2r)
     trades = pd.read_sql_query("SELECT reason_open FROM trades", r.store.conn)
     assert "signal:testch" in trades.reason_open.tolist()
 

@@ -27,7 +27,33 @@ import numpy as np
 import pandas as pd
 
 log = logging.getLogger("signals")
-NUM = r"(\d{3,5}(?:[.,]\d{1,3})?)"
+NUM = r"(?<![\d.,])(\d{3,5}(?:[.,]\d{1,3})?)(?!\d)"   # a price; never the middle of a longer number (590000, 2024…)
+_THOUSANDS = re.compile(r"(?<=\d),(?=\d{3}\b)")         # 3,687.738 → 3687.738
+_GOLD = re.compile(r"(xau\s*/?\s*usd|\bxau\b|\bgold(?:\s*/?\s*usd)?\b)", re.I)
+_OTHER = re.compile(  # other instruments that gold channels also post (a gold price check alone cannot tell them apart)
+    r"(xau\s*/?\s*(?:eur|jpy|gbp|aud|chf|cad|cnh|try)|\bxag|\bsilver\b|\bbtc|bitcoin|\beth(?:usd|usdt)?\b|ethereum|"
+    r"\bus\s?30\b|\bus\s?100\b|\bus\s?500\b|\bnas(?:daq|100|dq)\b|\bspx|\bsp\s?500\b|s&p|\bger\s?(?:30|40)\b|\bdax\b|"
+    r"\bdxy\b|\bdow\b|\bdj30\b|\bnikkei\b|\bjp225\b|\buk100\b|\bcrude\b|\boil\b|\bwti\b|\bbrent\b|\b(?:us|uk)oil\b|"
+    r"\b(?:eur|gbp|aud|nzd|usd|cad|chf|jpy)(?:usd|jpy|chf|cad|gbp|eur|nzd|aud)\b)", re.I)
+# result / management posts ("TP1 hit", "move SL to entry", "close all") are never new trades
+_MANAGE = re.compile(r"(\btp\s*\d?\s*(?:is\s+)?(?:hit|done|reached|achieved|smashed)|\bsl\s+(?:hit|moved|move)\b|"
+                     r"(?:move|moved|set|put)\s+(?:your\s+)?(?:sl|stop(?:\s*loss)?)\s+(?:to|at)\b|break\s*-?\s*even|"
+                     r"\bclose\s+(?:all|half|partial|your)|\bcancel(?:led|ed)?\b)", re.I)
+
+
+def instrument(text: str) -> str:
+    """'gold', 'other' or 'none': the FIRST instrument a post names ("XAUUSD SELL … silver looks weak too" is gold,
+    "BTCUSD BUY … join our gold VIP group" is not)."""
+    g, o = _GOLD.search(text or ""), _OTHER.search(text or "")
+    if g and (not o or g.start() <= o.start()):
+        return "gold"
+    return "other" if o else "none"
+
+
+def sig_key(sig: "Signal") -> str:
+    """Stable id of a signal: channel, post and its position in the post. An EDITED post keeps its key (its levels are
+    updated in place), so it can never be traded twice."""
+    return f"{sig.channel}:{sig.post_id}:{int(getattr(sig, 'n', 0) or 0)}"
 
 
 @dataclass
@@ -44,6 +70,7 @@ class Signal:
     kind: str = "zone"        # zone | order
     aggressive: bool = False
     text: str = ""
+    n: int = 0                # position of this signal in its post (a post may hold a buy zone and a sell zone)
 
 
 def _f(x: str) -> float:
@@ -51,8 +78,12 @@ def _f(x: str) -> float:
 
 
 def parse_post(channel: str, post_id: int, t: str, text: str) -> list[Signal]:
-    """All gold signals in one post (a post may contain a buy zone and a sell zone)."""
+    """All gold signals in one post (a post may contain a buy zone and a sell zone). Posts about another instrument
+    (silver, XAUEUR, crypto, indices, oil, FX pairs) and result / management posts are ignored."""
     if not text or not re.search(r"(xau|gold|zone|buy|sell)", text, re.I):
+        return []
+    text = _THOUSANDS.sub("", text)
+    if instrument(text) == "other" or _MANAGE.search(text):
         return []
     out: list[Signal] = []
     tgt = re.search(r"towards (?:the )?" + NUM, text, re.I)
@@ -61,15 +92,17 @@ def parse_post(channel: str, post_id: int, t: str, text: str) -> list[Signal]:
         a, b = _f(m.group(3)), _f(m.group(4))
         side = 1 if m.group(2).lower() == "buy" else -1
         tg = target if target is not None and (target - (a + b) / 2) * side > 0 else None
+        if (a + b) / 2 < 500:
+            continue
         out.append(Signal(channel, post_id, t, side, min(a, b), max(a, b), tg, kind="zone",
-                          aggressive=bool(m.group(1)), text=text[:400]))
+                          aggressive=bool(m.group(1)), text=text[:400], n=len(out)))
     if out:
         return out
     o = parse_order(channel, post_id, t, text)
     return [o] if o else []
 
 
-_PX = r"\$?\s*(\d{3,5}(?:\.\d{1,3})?)"
+_PX = r"\$?\s*(?<![\d.,])(\d{3,5}(?:\.\d{1,3})?)(?!\d)"
 _RESULT = re.compile(r"(\bhit\b|booked|running|profit done|pips? profit|\+\s*\d+\s*pips|closed|in profit|secured)", re.I)
 
 
@@ -81,8 +114,8 @@ def parse_order(channel: str, post_id: int, t: str, text: str) -> Signal | None:
        'ENTER: #XAUUSD long trade / CURRENT PRICE: 3,687.738 / STOP LOSS: 3,663.379 / TAKE PROFIT: 3,724.442'
     Result / update posts ('TP1 HIT', '+80 pips', 'booked') and non-gold posts are ignored. Sanity checks: the stop
     is on the losing side, targets on the winning side, all prices within 10 % of the entry."""
-    tx = re.sub(r"(?<=\d),(?=\d{3}\b)", "", text)                    # 3,687.738 → 3687.738
-    if not re.search(r"(xau|\bgold\b)", tx, re.I) or re.search(r"(xag|silver)", tx, re.I):
+    tx = _THOUSANDS.sub("", text)                                     # 3,687.738 → 3687.738
+    if instrument(tx) != "gold" or _MANAGE.search(tx):                # must be a gold post, not a result / update
         return None
     d = re.search(r"\b(buy|sell|long|short)\b", tx, re.I)
     if not d:
@@ -91,9 +124,9 @@ def parse_order(channel: str, post_id: int, t: str, text: str) -> Signal | None:
     sl_m = re.search(r"\b(?:sl|stop\s*loss|stope\s*loss|stoploss)\b[^\d$]{0,12}" + _PX, tx, re.I)
     tps = [float(x) for x in re.findall(r"\b(?:tp(?:\s?\d(?!\d))?|take\s*profit(?:\s?\d(?!\d))?|target)\b[^\d$]{0,8}" + _PX, tx, re.I)]
     ent = re.search(r"\b(?:now|@|trade|entry|enter(?:\s+at)?|current\s+price|level|price|zone)\b[^\d$]{0,6}" + _PX
-                    + r"(?:\s*[-/]\s*(\d{1,5}(?:\.\d{1,3})?))?", tx, re.I)
+                    + r"(?:\s*[-/]\s*(\d{1,5}(?:\.\d{1,3})?)(?!\d))?", tx, re.I)
     if not ent:
-        ent = re.search(r"\b(?:buy|sell)\b[^\d$]{0,10}" + _PX + r"(?:\s*[-/]\s*(\d{1,5}(?:\.\d{1,3})?))?", tx, re.I)
+        ent = re.search(r"\b(?:buy|sell)\b[^\d$]{0,10}" + _PX + r"(?:\s*[-/]\s*(\d{1,5}(?:\.\d{1,3})?)(?!\d))?", tx, re.I)
     if not ent or (not sl_m and not tps):
         return None
     if _RESULT.search(tx) and not (sl_m and tps):
@@ -131,13 +164,15 @@ def dedupe(signals: list[Signal], hours: float = 12.0) -> list[Signal]:
     return out
 
 
-def fetch_channel(channel: str, pages: int = 1, before: int | None = None, pause_s: float = 1.0) -> list[dict]:
+def fetch_channel(channel: str, pages: int = 1, before: int | None = None, pause_s: float = 1.0,
+                  timeout: float = 20.0) -> list[dict]:
     """Newest posts of a PUBLIC channel via its web preview. Returns [{id, time, text}] (oldest first)."""
     posts: dict[int, dict] = {}
     for _ in range(max(1, pages)):
         url = f"https://t.me/s/{channel}" + (f"?before={before}" if before else "")
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (TradV2 signal reader)"})
-        page = urllib.request.urlopen(req, timeout=20).read().decode("utf-8", "replace")
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            page = resp.read().decode("utf-8", "replace")
         got = []
         for blk in page.split('class="tgme_widget_message_wrap')[1:]:
             pid = re.search(r'data-post="[^/]+/(\d+)"', blk); tm = re.search(r'<time datetime="([^"]+)"', blk)
@@ -272,7 +307,7 @@ def grade(signals: list[Signal], bars: pd.DataFrame, spread: float = 0.32, atr: 
         r = (order_trade if sg.kind == "order" else zone_trade)(sg, bars, spread, atr, **kw)
         rows.append(dict(channel=sg.channel, post_id=sg.post_id, time=sg.time, side=sg.side, zone_lo=sg.zone_lo,
                          zone_hi=sg.zone_hi, target=sg.target, kind=sg.kind, aggressive=sg.aggressive,
-                         traded=r is not None, **(r or {})))
+                         n=int(getattr(sg, "n", 0) or 0), traded=r is not None, **(r or {})))
     return pd.DataFrame(rows)
 
 
@@ -307,7 +342,8 @@ class SignalLearner:
 
     def fit(self, graded: pd.DataFrame) -> "SignalLearner":
         self.tab = {}
-        t = graded[graded["traded"].astype(bool)] if graded is not None and len(graded) else pd.DataFrame()
+        ok = graded is not None and len(graded) and {"traded", "usd", "channel", "side"} <= set(graded.columns)
+        t = graded[graded["traded"].astype(bool)].dropna(subset=["usd"]) if ok else pd.DataFrame()
         self.n_total = len(t)
         if t.empty:
             return self
@@ -372,24 +408,72 @@ class SignalRater:
     plus every live grade; refit whenever new grades arrive. Walk-forward test (€500, Dec 2025 – Nov 2026): taking only
     signals it rates > $0 lifted Signal Max from +$1,080 to +$1,681 and Signal Hyper from +$1,468 to +$1,627 (per 0.01 lot)."""
 
-    def __init__(self, seed: Path | None = None):
-        self.rows = pd.read_csv(seed) if seed is not None and Path(seed).exists() else pd.DataFrame()
+    NEED = {"ch", "lane", "usd", *RATER_COLS}
+
+    def __init__(self, seed: Path | None = None, live: Path | None = None):
+        """seed: the shipped graded history; live: data/signals/rated_live.csv (every signal graded on this PC so far,
+        so the AI keeps what it learned across restarts and updates)."""
+        parts = [self._read(seed), self._read(live)]
+        parts = [x for x in parts if len(x)]
+        self.rows = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
         self.models: dict = {}
         self.channels: list[str] = []
         self.fit()
 
-    def add(self, df: pd.DataFrame) -> None:
-        if df is not None and len(df):
-            self.rows = pd.concat([self.rows, df], ignore_index=True) if len(self.rows) else df.reset_index(drop=True)
-            self.fit()
+    @classmethod
+    def _read(cls, path: Path | None) -> pd.DataFrame:
+        if path is None or not Path(path).exists():
+            return pd.DataFrame()
+        try:
+            d = pd.read_csv(path)
+        except (ValueError, OSError) as e:   # empty / half-written file: train without it rather than not at all
+            log.warning("signal rater: cannot read %s (%s)", path, e)
+            return pd.DataFrame()
+        if not cls.NEED <= set(d.columns):
+            log.warning("signal rater: %s lacks columns %s", path, sorted(cls.NEED - set(d.columns)))
+            return pd.DataFrame()
+        return d.dropna(subset=["usd"])
 
-    def ch_recent(self, ch: str) -> float:
+    def add(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Learn from newly graded signals (refits). Returns the added rows with their channel record filled in."""
+        if df is None or not len(df):
+            return pd.DataFrame()
+        df = df.copy()
+        df["_new"] = True
+        allr = pd.concat([self.rows.assign(_new=False), df], ignore_index=True) if len(self.rows) else df.reset_index(drop=True)
+        allr["_t"] = pd.to_datetime(allr["time"], utc=True, errors="coerce", format="mixed")
+        allr = allr.sort_values("_t", kind="stable")
+        # the channel's own record in this lane BEFORE each new signal: mean of its last 30 results (as in training)
+        rec = allr.groupby(["lane", "ch"]).usd.transform(lambda x: x.shift(1).rolling(30, min_periods=5).mean())
+        fill = allr["_new"] & allr["ch_recent"].isna() if "ch_recent" in allr else allr["_new"]
+        allr.loc[fill, "ch_recent"] = rec[fill]
+        added = allr[allr["_new"]].drop(columns=["_new", "_t"])
+        self.rows = allr.drop(columns=["_new", "_t"]).reset_index(drop=True)
+        self.fit()
+        return added
+
+    def ch_recent(self, ch: str, lane: str | None = None) -> float:
+        """Mean $ result of the channel's last 30 graded signals in this lane (≥ 5 needed), oldest → newest by time."""
         if self.rows.empty:
             return np.nan
-        x = self.rows[self.rows.ch == ch].usd.tail(30)
-        return float(x.mean()) if len(x) >= 5 else np.nan
+        d = self.rows[self.rows.ch == ch]
+        if lane is not None and "lane" in d:
+            d = d[d.lane == lane]
+        if len(d) < 5:
+            return np.nan
+        if "time" in d:
+            d = d.assign(_t=pd.to_datetime(d["time"], utc=True, errors="coerce", format="mixed")).sort_values("_t", kind="stable")
+        x = d.usd.tail(30)
+        return float(x.mean())
 
     def fit(self) -> None:
+        try:
+            self._fit()
+        except Exception:  # noqa: BLE001 — no rating AI then: the signal falls back to the channel learner
+            log.exception("signal rater: training failed")
+            self.models = {}
+
+    def _fit(self) -> None:
         self.models = {}
         if self.rows.empty:
             return
@@ -410,7 +494,7 @@ class SignalRater:
         if m is None:
             return None
         X = pd.DataFrame([{k: float(feats.get(k, np.nan)) if feats.get(k) is not None else np.nan for k in RATER_COLS}])
-        X["ch_recent"] = self.ch_recent(channel)
+        X["ch_recent"] = self.ch_recent(channel, lane)
         X["channel"] = pd.Categorical([channel], categories=self.channels if channel in self.channels else self.channels + [channel])
         if channel not in self.channels:
             X["channel"] = pd.Categorical([np.nan], categories=self.channels)
@@ -431,18 +515,27 @@ class SignalBook:
         self.graded = pd.DataFrame()
         self.last_poll = 0.0
         self.errors: dict[str, str] = {}
+        self._fails: dict[str, int] = {}
+        self._next_try: dict[str, float] = {}
         if self.path.exists():
             try:
-                self.signals = [Signal(**d) for d in json.loads(self.path.read_text(encoding="utf-8"))]
-            except (ValueError, TypeError):
+                fields = set(Signal.__dataclass_fields__)
+                self.signals = [Signal(**{k: v for k, v in d.items() if k in fields})
+                                for d in json.loads(self.path.read_text(encoding="utf-8"))]
+            except (ValueError, TypeError, AttributeError):
                 self.signals = []
         gp = self.folder / "graded.csv"
         seed = Path(__file__).with_name("assets") / "signals_seed.csv"   # backtest-graded history shipped with the app
-        for f in ((gp,) if gp.exists() else ((seed,) if seed.exists() else ())):
+        for f in (gp, seed):                     # this PC's grades, else (missing / empty / damaged) the shipped history
+            if not f.exists():
+                continue
             try:
-                self.graded = pd.read_csv(f)
+                g = pd.read_csv(f)
             except (ValueError, OSError):
-                pass
+                continue
+            if len(g) and {"channel", "post_id", "side", "traded"} <= set(g.columns):
+                self.graded = g
+                break
         self.learner = SignalLearner(min_n=self.min_graded).fit(self.graded)  # min_graded: config signals.min_graded
         self.rater: SignalRater | None = None
         self.lanes: list[str] = []
@@ -450,35 +543,90 @@ class SignalBook:
     def due(self) -> bool:
         return time.time() - self.last_poll >= self.poll_s
 
+    KEEP_DAYS = 14          # signals older than this can no longer be traded or graded (the live M1 window is ~9 days)
+
     def poll(self) -> int:
+        """Fetch every channel and merge the posts (the live bot calls fetch_all() and merge_all() separately so the
+        network wait never holds the lock the trading loop needs)."""
+        return self.merge_all(self.fetch_all())
+
+    def fetch_all(self, timeout: float = 8.0) -> dict:
+        """{channel: [posts] | Exception} for every channel that is due, fetched in parallel. A failing channel is
+        retried with a growing pause (1, 2, 4 … 30 min) so a dead channel never slows the others down."""
         self.last_poll = time.time()
-        known = {(s.channel, s.post_id, s.side, s.zone_lo) for s in self.signals}
-        before = len(self.signals)
-        new = 0
-        for ch in self.channels:
+        now = time.monotonic()
+        due = [ch for ch in self.channels if self._next_try.get(ch, 0.0) <= now]
+        if not due:
+            return {}
+        from concurrent.futures import ThreadPoolExecutor
+
+        def one(ch):
             try:
-                for p in fetch_channel(ch, pages=1):
-                    for s in parse_post(ch, p["id"], p["time"], p["text"]):
-                        if (s.channel, s.post_id, s.side, s.zone_lo) not in known:
-                            self.signals.append(s); known.add((s.channel, s.post_id, s.side, s.zone_lo)); new += 1
-                self.errors.pop(ch, None)
+                return ch, fetch_channel(ch, pages=1, timeout=timeout)
             except Exception as e:  # noqa: BLE001 — network / layout problems must never stop trading
-                self.errors[ch] = str(e)[:120]
-        if new:
-            self.signals = dedupe(self.signals)[-2000:]           # repeated update posts → one signal
-            new = max(0, len(self.signals) - before)
-            self.path.write_text(json.dumps([asdict(s) for s in self.signals], ensure_ascii=False), encoding="utf-8")
-        return new
+                return ch, e
+        with ThreadPoolExecutor(max_workers=min(6, len(due)), thread_name_prefix="tg-fetch") as pool:
+            return dict(pool.map(one, due))
+
+    def merge_all(self, got: dict) -> int:
+        """Parse fetched posts into signals. New posts are appended; an EDITED post (same channel / post / position)
+        updates its signal in place. Returns how many genuinely new signals were added."""
+        now = time.monotonic()
+        idx = {sig_key(x): i for i, x in enumerate(self.signals)}
+        fresh, changed = set(), False
+        for ch, posts in got.items():
+            if isinstance(posts, Exception):
+                self._fails[ch] = self._fails.get(ch, 0) + 1
+                self._next_try[ch] = now + min(1800.0, 60.0 * 2 ** (self._fails[ch] - 1))
+                self.errors[ch] = str(posts)[:120] or type(posts).__name__
+                continue
+            self._fails.pop(ch, None); self._next_try.pop(ch, None); self.errors.pop(ch, None)
+            for p in posts or []:
+                try:
+                    parsed = parse_post(ch, int(p["id"]), str(p["time"]), str(p.get("text") or ""))
+                except Exception:  # noqa: BLE001 — one odd post must not hide the rest
+                    log.exception("signals: cannot parse post %s/%s", ch, p.get("id"))
+                    continue
+                for sg in parsed:
+                    k = sig_key(sg)
+                    if k in idx:
+                        old = self.signals[idx[k]]
+                        if (old.side, old.zone_lo, old.zone_hi, old.sl, old.target, old.tps) != \
+                                (sg.side, sg.zone_lo, sg.zone_hi, sg.sl, sg.target, sg.tps):
+                            self.signals[idx[k]] = sg      # edited by the channel: new levels, same key
+                            changed = True
+                    else:
+                        idx[k] = len(self.signals)
+                        self.signals.append(sg)
+                        fresh.add(k)
+        if fresh or changed:
+            cut = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=self.KEEP_DAYS)
+            kept = [x for x in dedupe(self.signals) if _t0(x) >= cut]   # repeated update posts → one signal
+            self.signals = kept[-5000:]
+            self._save()
+        return sum(1 for x in self.signals if sig_key(x) in fresh)
+
+    def _save(self) -> None:
+        from monitor import atomic_write_text
+        try:
+            atomic_write_text(self.path, json.dumps([asdict(x) for x in self.signals], ensure_ascii=False))
+        except OSError as e:
+            log.warning("signals: cannot save %s (%s)", self.path, e)
 
     def regrade(self, bars: pd.DataFrame, spread: float, atr: pd.Series | None = None, h4: pd.Series | None = None) -> None:
         """Grade every signal whose outcome is decidable with the bars we have (live M1 history)."""
         if bars is None or bars.empty:
             return
-        done = set(zip(self.graded.get("channel", []), self.graded.get("post_id", []), self.graded.get("side", []),
-                       self.graded.get("zone_lo", []))) if not self.graded.empty else set()
-        horizon = bars.index[-1] - pd.Timedelta(hours=8)
-        todo = [s for s in self.signals if (s.channel, s.post_id, s.side, s.zone_lo) not in done
-                and pd.Timestamp(s.time) < horizon and pd.Timestamp(s.time) >= bars.index[0]]
+        g0 = self.graded
+        if not g0.empty and {"channel", "post_id"} <= set(g0.columns):
+            nn = g0["n"].fillna(0).astype(int) if "n" in g0 else pd.Series(0, index=g0.index)
+            done = {f"{c}:{int(p)}:{int(n)}" for c, p, n in zip(g0["channel"], g0["post_id"], nn)}
+        else:
+            done = set()
+        # grade only when the WHOLE trade is over in every lane: entry up to valid_h after the post + the longest hold
+        hold = max([float(self.grade_kw.get("hold_h", 8.0))] + [float(LANES.get(l, {}).get("hold_h", 8.0)) for l in self.lanes])
+        horizon = bars.index[-1] - pd.Timedelta(hours=float(self.grade_kw.get("valid_h", 4.0)) + hold + 0.25)
+        todo = [s for s in self.signals if sig_key(s) not in done and bars.index[0] <= _t0(s) < horizon]
         if todo:
             if self.tp_mode == "2r":
                 import copy
@@ -489,7 +637,11 @@ class SignalBook:
             if h4 is not None:
                 g["h4_ok"] = [int(np.sign(h4.asof(pd.Timestamp(t)) or 0)) == sd for t, sd in zip(g.time, g.side)]
             self.graded = pd.concat([self.graded, g], ignore_index=True) if not self.graded.empty else g
-            self.graded.to_csv(self.folder / "graded.csv", index=False)
+            from monitor import atomic_write_text
+            try:
+                atomic_write_text(self.folder / "graded.csv", self.graded.to_csv(index=False))
+            except OSError as e:
+                log.warning("signals: cannot save graded.csv (%s)", e)
             self.learner.fit(self.graded)                               # retrain on every new grade
             if self.rater is not None and self.lanes and h4 is not None:
                 self._rate_grades(todo, bars, atr, h4)
@@ -508,13 +660,17 @@ class SignalBook:
                 f = signal_features(sg, pd.Timestamp(sg.time), bars.close, atr, h1, h4, med)
                 rows.append(dict(time=sg.time, ch=sg.channel, lane=lane, usd=r.usd, **f, ch_recent=np.nan))
         if rows:
-            self.rater.add(pd.DataFrame(rows))
-            pd.DataFrame(rows).to_csv(self.folder / "rated_live.csv", mode="a", index=False,
-                                      header=not (self.folder / "rated_live.csv").exists())
+            added = self.rater.add(pd.DataFrame(rows))
+            out = self.folder / "rated_live.csv"
+            try:            # reloaded at the next start (SignalRater(seed, live)): the AI keeps what it learned here
+                cols = ["time", "ch", "lane", "usd"] + RATER_COLS
+                added.reindex(columns=cols).to_csv(out, mode="a", index=False, header=not out.exists())
+            except OSError as e:
+                log.warning("signals: cannot append %s (%s)", out, e)
 
     def stats(self) -> dict:
         return channel_stats(self.graded, self.min_graded)
 
     def active(self, now: pd.Timestamp, valid_h: float = 4.0) -> list[Signal]:
         lo = now - pd.Timedelta(hours=valid_h)
-        return [s for s in self.signals if lo < pd.Timestamp(s.time) <= now]
+        return [s for s in self.signals if lo < _t0(s) <= now]

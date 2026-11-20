@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import secrets
 import subprocess
@@ -95,7 +96,9 @@ def _json_serialize(d):
         return {k: _json_serialize(v) for k, v in d.items()}
     if isinstance(d, (list, tuple)):
         return [_json_serialize(v) for v in d]
-    if d is None or isinstance(d, (bool, int, float, str)):
+    if isinstance(d, float):
+        return d if math.isfinite(d) else None   # NaN / inf are not JSON: the page would fail to parse the whole state
+    if d is None or isinstance(d, (bool, int, str)):
         return d
     # datetime
     if hasattr(d, 'isoformat'):
@@ -106,7 +109,7 @@ def _json_serialize(d):
     # numpy types
     if hasattr(d, 'item'):
         try:
-            return d.item()
+            return _json_serialize(d.item())
         except Exception:
             pass
     return str(d)
@@ -215,9 +218,10 @@ SIG_MAX = {"enabled": True, "max_away": 5.0, "tp_mode": "2r", "hold_h": 8, "max_
 SIG_HYPER = {"enabled": True, "max_away": 1e9, "tp_mode": "2r", "hold_h": 24, "max_open": 10, "risk_pct": 0.5}
 # 🔮📡 Signal AI — winners of the €500 tournament (5 rounds, ~250 combinations, Dec 2025 – Nov 2026, AI ratings walk-forward,
 # max 10 open signal trades). Base 🎯 Perfect 1 % + channel signals rated by the signal AI (1 % risk each, 2 × size when the AI
-# expects > $0.5). Final check, both profitable in BOTH halves at every size (total, worst drawdown):
-#   Signal AI:     Max lane (≤ $5 from entry, 8 h), AI > $0.25  → €200 +1,709 % (−49 %) · €500 +1,587 % (−35 %) · €1,000 +1,287 % (−28 %)
-#   Signal AI ×2:  Max + Hyper lanes (any distance, 24 h), AI > $0 → €200 +7,243 % (−57 %) · €500 +4,560 % (−58 %) · €1,000 +2,231 % (−60 %)
+# expects > $0.5). v3 re-check on the cleaned channel history (gold posts only — v2.22 also read BTC/ETH/index posts as gold —
+# no signal stop > 3 % of the price, 0.01 lot only if it risks ≤ 25 %); both profitable in BOTH halves at every size:
+#   Signal AI:     Max lane (≤ $5 from entry, 8 h), AI > $0.25  → €200 +1,615 % (−49 %) · €500 +1,571 % (−35 %) · €1,000 +1,158 % (−29 %)
+#   Signal AI ×2:  Max + Hyper lanes (any distance, 24 h), AI > $0 → €200 +5,160 % (−62 %) · €500 +2,731 % (−62 %) · €1,000 +2,148 % (−61 %)
 SIG_AI = {"enabled": True, "lanes": ["max"], "ai_rate": True, "ai_threshold": 0.25, "tp_mode": "2r",
           "risk_pct": 1.0, "boost_mult": 2.0, "boost_above": 0.5, "max_open": 10}
 _SIG_AI_RISK = {"risk_per_trade_pct": 1.0, "max_daily_trades": 300, "conf_sizing": {"enabled": False}}
@@ -444,24 +448,43 @@ def _write_user(updates: dict, replace: bool = False):
     p.write_text(yaml.safe_dump(cur, sort_keys=False))
 
 
+def _num(v, typ=float, lo=None, hi=None):
+    """A dashboard number → typ, clamped to [lo, hi]; None for empty / non-numeric / NaN / inf input."""
+    try:
+        x = float(str(v).strip().replace(",", "."))
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(x):
+        return None
+    if lo is not None:
+        x = max(lo, min(hi, x))
+    return int(round(x)) if typ is int else float(x)
+
+
 def _save_settings(body: dict) -> str:
     p = DATA / "user.yaml"
-    cur = yaml.safe_load(p.read_text()) if p.exists() else {}
-    cur = cur or {}
+    try:
+        cur = yaml.safe_load(p.read_text()) if p.exists() else {}
+    except (OSError, yaml.YAMLError):
+        cur = {}
+    cur = cur if isinstance(cur, dict) else {}
+    bad = []
     for k, v in body.items():
         if k not in USER_KEYS:
             continue
         sec, typ, lo, hi = USER_KEYS[k]
         if typ is bool:
-            v = bool(v)
+            v = v.strip().lower() in ("1", "true", "yes", "on") if isinstance(v, str) else bool(v)
         else:
-            v = typ(v)
-            if lo is not None:
-                v = max(lo, min(hi, v))
+            v = _num(v, typ, lo, hi)
+            if v is None:          # empty / invalid field: keep the current value instead of crashing or saving junk
+                bad.append(k)
+                continue
         cur.setdefault(sec, {})[k] = v
     DATA.mkdir(exist_ok=True)
     p.write_text(yaml.safe_dump(cur, sort_keys=False))
-    return "Saved." + _restart_if_running()
+    skipped = f" (kept the old value of {', '.join(bad)}: not a number)" if bad else ""
+    return "Saved." + skipped + _restart_if_running()
 
 
 def _open(what: str) -> str:
@@ -485,7 +508,8 @@ def action(name: str, body: dict) -> str:
         return ("Closing all bot trades…" if JOB.start("Kill switch: closing all bot trades", ["kill"])
                 else "Busy — try again in a moment.")
     if name == "reset":
-        JOB.start("Reset", ["reset"])
+        if not JOB.start("Reset", ["reset"]):
+            return "Busy — another task is running. Try Reset again in a moment."
         return "🔄 Reset: daily loss limit and trade count back to zero, all safety stops cleared (applies within a second if the bot is running)."
     if name == "check":
         return "Checking MT5…" if JOB.start("Checking MT5 connection", ["doctor"]) else "Busy."
@@ -493,9 +517,13 @@ def action(name: str, body: dict) -> str:
         return _retrain()
     if name == "telegram":
         return _telegram(body.get("token", ""))
-    if name == "mt5":
-        _write_env({"MT5_LOGIN": str(body.get("login", "")).strip(), "MT5_PASSWORD": str(body.get("password", "")),
-                    "MT5_SERVER": str(body.get("server", "")).strip()})
+    if name == "mt5":   # empty fields keep what is saved (an empty password box must not erase the saved password)
+        upd = {"MT5_LOGIN": str(body.get("login", "") or "").strip(), "MT5_PASSWORD": str(body.get("password", "") or ""),
+               "MT5_SERVER": str(body.get("server", "") or "").strip()}
+        upd = {k: v for k, v in upd.items() if v}
+        if not upd:
+            return "Nothing to save — fill in login, password and/or server."
+        _write_env(upd)
         return "Saved on this PC (.env). The bot will log MT5 in by itself after a reboot."
     if name == "settings":
         return _save_settings(body)
@@ -503,8 +531,8 @@ def action(name: str, body: dict) -> str:
         chans = [c.strip().lstrip("@").split("/")[-1] for c in str(body.get("channels", "")).replace("\n", ",").split(",")]
         chans = [c for c in chans if c and all(ch.isalnum() or ch == "_" for ch in c)][:12]
         on = bool(body.get("enabled")) and bool(chans)
-        _write_user({"signals": {"enabled": on, "channels": chans,
-                                 "risk_pct": max(0.1, min(2.0, float(body.get("risk_pct", 0.5) or 0.5)))}})
+        rp = _num(body.get("risk_pct", 0.5), float, 0.1, 2.0)
+        _write_user({"signals": {"enabled": on, "channels": chans, "risk_pct": 0.5 if rp is None else rp}})
         return (f"📡 Following {len(chans)} channel(s): {', '.join(chans)}. Trades their signals live; a channel is "
                 f"muted automatically if its graded results are negative." if on else "📡 Signal channels off.") + _restart_if_running()
     if name == "style":
@@ -517,8 +545,8 @@ def action(name: str, body: dict) -> str:
                "turbo": "🎯 Perfect: the best backtested strategy (hourly trend breakouts, 1 % risk). Use €100+.",
                "perfect": "🎯 Perfect: the best backtested strategy (hourly trend breakouts, 1 % risk). Use €100+.",
                "extreme": "☠️ Extreme: ~85 trades a day, buys AND sells with the last 2 candles. Lost money in every backtest period.",
-               "signalai": "🔮📡 Signal AI: Perfect + the channel signals the rating AI likes (near entry, 8 h; 2× on its top picks). €500 backtest +1,587 %, worst −35 %.",
-               "signalai2x": "🔮📡🔥 Signal AI ×2: Perfect + AI-rated signals in both lanes (near entry 8 h + any distance 24 h). €500 backtest +4,560 %, worst −58 %.",
+               "signalai": "🔮📡 Signal AI: Perfect + the channel signals the rating AI likes (near entry, 8 h; 2× on its top picks). €500 backtest +1,571 %, worst −35 %.",
+               "signalai2x": "🔮📡🔥 Signal AI ×2: Perfect + AI-rated signals in both lanes (near entry 8 h + any distance 24 h). €500 backtest +2,731 %, worst −62 %.",
                "signalmax5": "📡 Signal Max 5: Hyper Max 5 plus live channel signals (≤ $5 from entry, 2R, 8 h).",
                "signalhyper": "📡 Signal Hyper: trades EVERY channel signal (2R target, 24 h) — no own entries.",
                "signalhypermax5": "📡🔥 Signal Hyper Max 5: Hyper Max 5 + every channel signal. Best at €1,000+ (+540 %, worst −39 %); it blew €200 in the backtest.",

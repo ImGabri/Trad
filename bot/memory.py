@@ -81,7 +81,7 @@ class TradeMemory:
                     working=[fmt(x) for x in good[:5]], blocked=len(bad))
 
     def save(self) -> None:
+        from monitor import atomic_write_text
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(dict(updated=time.strftime("%Y-%m-%d %H:%M"), buckets=self.b), indent=1))
-        tmp.replace(self.path)
+        atomic_write_text(self.path, json.dumps(dict(updated=time.strftime("%Y-%m-%d %H:%M"), buckets=self.b), indent=1),
+                          best_effort=True)

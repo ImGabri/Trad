@@ -77,7 +77,7 @@ def start(root: Path, mode: str):
     pythonw = Path(sys.executable).with_name("pythonw.exe")
     if not pythonw.is_file():
         raise RuntimeError("pythonw.exe not found next to python.exe.")
-    stop(root, quiet=True)
+    stop(root, quiet=False)   # let a running worker finish its step and save its state before the task is replaced
     control_path(root).parent.mkdir(exist_ok=True)
     control = {"enabled": True, "mode": mode, "generation": uuid4().hex}
     name = task_name()

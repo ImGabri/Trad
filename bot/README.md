@@ -23,13 +23,13 @@ Backtests use real PU Prime Standard costs ($0.32 spread), the bot's own code an
 
 | Strategy | What it does | Backtest |
 |---|---|---|
-| 🔮📡 **Signal AI** (recommended) | 🎯 Perfect breakouts + the Telegram signals the signal-rating AI expects to win (near entry, out after 8 h; 2× size on its top picks) | Dec 2025 – Nov 2026: €200 **+1,709 %** (worst −49 %) · €500 **+1,587 %** (−35 %) · €1,000 **+1,287 %** (−28 %); profitable in both halves |
-| 🔮📡🔥 **Signal AI ×2** | the same plus a second lane (any distance, 24 h) | €200 +7,243 % (−57 %) · €500 +4,560 % (−58 %) · €1,000 +2,231 % (−60 %) |
+| 🔮📡 **Signal AI** (recommended) | 🎯 Perfect breakouts + the Telegram signals the signal-rating AI expects to win (near entry, out after 8 h; 2× size on its top picks) | Dec 2025 – Nov 2026: €200 **+1,615 %** (worst −49 %) · €500 **+1,571 %** (−35 %) · €1,000 **+1,158 %** (−29 %); profitable in both halves at every size |
+| 🔮📡🔥 **Signal AI ×2** | the same plus a second lane (any distance, 24 h) | €200 +5,160 % (−62 %) · €500 +2,731 % (−62 %) · €1,000 +2,148 % (−61 %); profitable in both halves |
 | 🎯 **Perfect** | buys the first break of the 24-hour high in an hourly uptrend, 1 % risk | €200: 2019–23 +64 % · 2024–25 +318 % · 2025–26 +265 % |
 | 🎯🔥 **Hyper Max** | Perfect on 12/24/48 h channels + 4-hour trend + 20-day / previous-day / previous-week breakouts, up to 3 trades | €200: +202 % · +1,114 % · +745 % |
 | 🎯🔥⚡ **Hyper Max 5** | Hyper Max with up to 5 trades, held up to 24 h | €200: +265 % · +1,304 % · +1,046 % (but only +54 % / −82 % in Dec 2025 – Nov 2026) |
 | 🔮 **Predict Max 5** / 🔮🛡 **Safe** | Hyper Max 5 sized by the 25-minute price AI | €200: +300 % · +1,958 % · +797 % |
-| 📡 **Signal Max 5 / Signal Hyper (Max 5)** | earlier channel-signal styles without the rating AI | superseded by Signal AI |
+| 📡 **Signal Max 5 / Signal Hyper (Max 5)** | earlier channel-signal styles without the rating AI | Dec 2025 – Nov 2026: Signal Max 5 and Signal Hyper Max 5 **blew €200** (€500: +221 % / +248 %, drops to −90 %); Signal Hyper €200 +410 % but −96 % in Jun–Nov |
 | ⚡ Active · 🛡 Careful · 🧺 Basket · ☠️ Extreme · 💀 Hyper · 🤖 Hyper AI | scalping experiments | **lost money in every backtest** — the spread is bigger than the edge in 1-minute moves |
 
 The dashboard can rank all strategies by **profit**, **trades per day** or **safety** and shows each one's numbers.
@@ -43,13 +43,18 @@ The dashboard can rank all strategies by **profit**, **trades per day** or **saf
 * **The rating AI** (gradient-boosted, one model per lane) predicts the $ result of each signal after costs from: the
   channel, buy/sell, how far price already moved from the entry, stop size, posted reward:risk, 1 h / 4 h trend
   agreement, momentum, volatility, time of day/week and the channel's recent record. It trades only signals it expects to
-  win and doubles the size on the best ones. It ships trained on 4,015 graded trades of 7 channels and retrains on every
-  new live result. Walk-forward it lifted the channel trades from +$1,080 to +$1,681 per 0.01 lot on half as many trades.
+  win and doubles the size on the best ones. It ships trained on 3,952 graded lane trades of 7 channels (gold posts only)
+  and retrains on every new live result — also after restarts and updates (`data\signals\rated_live.csv`). Walk-forward
+  it lifted the channel trades from +$1,080 to +$1,681 per 0.01 lot on half as many trades.
 * **Channel track records** (all signals graded on real prices, $ per 0.01 lot): UnitedKingsOfficial +$1,316 ·
-  Forexstar_Gold +$390 · EliteGoldTraders03 +$295 · AnabelSignals +$45 · GoldPrincess −$82 · xauusd_signals −$107 ·
+  Forexstar_Gold +$390 · EliteGoldTraders03 +$295 · AnabelSignals +$45 · GoldPrincess −$82 · xauusd_signals −$93 ·
   **Callisto FX −$489** (on the UK FCA warning list; the AI skips it).
-* **Risk:** 1 % per signal trade (2 % on top-rated ones), at most 10 open, separate from the breakout trades; the news
-  calendar pauses new entries around NFP / CPI / FOMC.
+* **Risk:** 1 % per signal trade (2 % on top-rated ones), at most 10 open and 60 a day, separate from the breakout
+  trades. Signal trades follow the same safety rules: news blocks around NFP / CPI / FOMC, Friday flat, closed market,
+  spread filter, daily loss limit. An order post is traded only within 10 minutes of being posted; a stop or entry more
+  than 3 % from the price is refused (other instrument or typo); on small accounts the minimum 0.01 lot is used only if
+  it risks ≤ 25 %. Posts about silver, crypto, indices, oil or FX pairs and result / "move SL" posts are ignored, and an
+  edited post updates its signal instead of creating a second trade.
 
 ## Honest expectations
 
@@ -82,6 +87,48 @@ runtime\python.exe main.py kill
 ---
 
 ## History — every version with its research and backtests
+
+### v3.0 — perfecting pass: bug audit, cleaned signal data, honest re-test, simpler dashboard
+
+- **Dashboard:** one hero card (START/STOP, mode, equity, today, current strategy with its backtest line), a
+  **Change strategy** drawer with every strategy ranked in one table, a one-line setup summary, and tabs for trades,
+  signals and the market. Refreshing it costs ~2 ms instead of ~90 ms (settings are cached).
+- **Bug audit (25 findings, all fixed, with tests):**
+  - the signal reader no longer reads **Bitcoin, ETH, US30, DAX, oil or FX posts as gold** (309 of the history's
+    3,487 parsed signals were such posts); result / management posts and numbers inside longer numbers are ignored;
+  - an **edited** channel post updates its signal instead of being traded a second time; the "already traded" list is
+    kept by time (it could forget an active signal and trade it twice); new signals are still noticed once 2,000 are
+    stored;
+  - order posts are traded only within 10 min of the post, stops / entries more than 3 % away are refused, the minimum
+    lot on a signal risks at most 25 %;
+  - signal trades obey Friday flat, closed market, spread filter and the safety stops, have their own daily count, are
+    never trailed or tightened (they keep the levels they were tested with) and never trip the AI's drift pause;
+  - the rating AI judges each signal once, on the market as it was when posted (as trained), and per lane;
+    it keeps its live lessons across restarts;
+  - channels are fetched in parallel without blocking the trading loop; a dead channel is retried with a growing pause;
+    the reader thread stops with the bot (restarts used to pile up threads);
+  - **MT5 hiccups:** a moment where MT5 lists no positions no longer makes every open trade look closed (their notes —
+    signal hold time, kind — were deleted after 1 h); refused closes are retried once a minute, not every 0.5 s;
+  - the broker's **time offset** is re-checked from live ticks (a start on the weekend assumed UTC+2 for good);
+  - files are written atomically (Windows file locks no longer crash the bot); a failing helper (Telegram, calendar,
+    status) is logged and the bot carries on; Telegram commands and the calendar download no longer block trading;
+  - dashboard: Reset says "Busy" instead of silently doing nothing, an empty password box keeps the saved password,
+    empty / invalid numbers keep the old setting, NaN values no longer break the page; restarting the bot from the
+    dashboard lets it finish its step first.
+- **Honest re-test** on the cleaned channel history (Dec 2025 – Nov 2026, the window with walk-forward AI ratings):
+
+| Strategy | €200 | €500 | €1,000 | €500 Dec–May / Jun–Nov |
+|---|---|---|---|---|
+| 🔮📡 **Signal AI** | +1,615 % (−49 %) | **+1,571 % (−35 %)** | +1,158 % (−29 %) | +207 % / +316 % |
+| 🔮📡🔥 **Signal AI ×2** | +5,160 % (−62 %) | +2,731 % (−62 %) | +2,148 % (−61 %) | +86 % / +1,574 % |
+| 📡 Signal Max 5 (no AI) | blown | +221 % (−90 %) | +112 % (−76 %) | +22 % / +209 % |
+| 📡 Signal Hyper (no AI) | +410 % (−73 %) | +185 % (−53 %) | +98 % (−40 %) | +155 % / +30 % |
+| 📡🔥 Signal Hyper Max 5 | blown | +248 % (−71 %) | +127 % (−61 %) | +164 % / +87 % |
+| 🎯 Perfect alone | +99 % (−42 %) | +48 % (−30 %) | +31 % (−20 %) | +54 % / −8 % |
+| 🎯🔥⚡ Hyper Max 5 alone | −77 % (−78 %) | +54 % (−82 %) | +27 % (−70 %) | +7 % / +57 % |
+
+  v2.22 had shown Signal AI ×2 at +4,560 % (€500): part of that came from mis-read non-gold posts traded with absurd
+  stops. Signal AI itself barely changed (+1,587 % → +1,571 %).
 
 ### v2.22 — 🔮📡 Signal AI (winner of the €500 tournament)
 

@@ -181,7 +181,9 @@ signals:                     # 📡 live public Telegram signal channels (dashbo
   max_away: 5.0              # order posts: trade only while price is within $5 of the posted entry
   tp_mode: 2r                # 2r = target 2 × the risk (optimised); first = the channel's TP1
   max_open: 5                # signal trades open at once (on top of the style's own trades)
+  max_daily: 60              # signal trades per UTC day (own count: never uses the style's daily trade limit)
   risk_pct: 0.5              # risk per signal trade (sized off its stop)
+  min_lot_max_risk_pct: 25   # small accounts: a signal trade may use the minimum 0.01 lot if that risks ≤ 25 % (never more)
   min_graded: 100            # the signal AI judges a channel after 100 graded signals; it only drops clearly losing ones
   require_h4: false          # true = only take signals in the 4-hour trend's direction
   lanes: []                  # [max, hyper] = trade each signal in two lanes (≤ $5 / 8 h and any distance / 24 h)

@@ -13,13 +13,14 @@ Full guide, every strategy with its backtest, and honest caveats: **[bot/README.
 
 | Strategy | What it does | Backtest |
 |---|---|---|
-| 🔮📡 **Signal AI** | 🎯 Perfect breakouts + the Telegram channel signals the signal-rating AI expects to win | €500 Dec 2025 → Nov 2026: +1,598 % (worst drop −35 %) |
-| 🔮📡🔥 **Signal AI ×2** | the same in two signal lanes | +4,726 % (worst drop −58 %) |
-| 🎯 **Perfect** | hourly trend breakouts, 1 % risk | profitable in 2019–23, 2024–25 and 2025–26 |
-| 🎯🔥 **Hyper Max** / ⚡ **Hyper Max 5** | Perfect on 12/24/48 h channels + 4-hour trend + 20-day / previous day / week breakouts | profitable in every period at €200 and €1,000 |
+| 🔮📡 **Signal AI** (recommended) | 🎯 Perfect breakouts + the Telegram channel signals the signal-rating AI expects to win | Dec 2025 → Nov 2026: €200 +1,615 % · €500 +1,571 % · €1,000 +1,158 % (worst drop −29 % to −49 %), profitable in both halves |
+| 🔮📡🔥 **Signal AI ×2** | the same plus a second signal lane (any distance, 24 h) | Dec 2025 → Nov 2026: €200 +5,160 % · €500 +2,731 % · €1,000 +2,148 % (worst drop about −62 %) |
+| 🎯 **Perfect** | hourly trend breakouts, 1 % risk | €200: +64 % (2019–23) · +318 % (2024–25) · +265 % (2025–26) |
+| 🎯🔥 **Hyper Max** / ⚡ **Hyper Max 5** | Perfect on 12/24/48 h channels + 4-hour trend + 20-day / previous day / week breakouts | profitable in all three long periods, but drops of −60 % to −88 % (Hyper Max 5 lost 77 % of €200 from Dec 2025) |
 
-Fast scalping styles (Basket, Extreme, Hyper, Hyper AI) are kept as experiments — they lost money in every backtest because the
-$0.32 spread is larger than the edge in 1-minute moves. Past backtests do not guarantee future results; use a demo account.
+Channel signals without the rating AI (Signal Max 5, Signal Hyper …) and the fast scalping styles (Basket, Extreme, Hyper,
+Hyper AI) are kept as experiments: they blew small accounts or lost money in backtests. Past backtests do not guarantee
+future results; use a demo account.
 
 ## Legacy V1
 
